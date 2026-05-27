@@ -1,0 +1,6 @@
+{
+  "name": "Amitdied Beat Store",
+  "description": "A modern, dark-themed music producer portfolio and beat selling website.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
