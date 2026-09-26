@@ -293,7 +293,7 @@ export async function addTransmission(data: any) {
   };
   db.instagramTransmissions.unshift(newTx);
   writeDb(db);
-  revalidatePath("/transmissions");
+  revalidatePath("/");
   revalidatePath("/admin");
   return newTx;
 }
@@ -304,6 +304,6 @@ export async function deleteTransmission(id: string) {
     db.instagramTransmissions = db.instagramTransmissions.filter((t: any) => t.id !== id);
     writeDb(db);
   }
-  revalidatePath("/transmissions");
+  revalidatePath("/");
   revalidatePath("/admin");
 }

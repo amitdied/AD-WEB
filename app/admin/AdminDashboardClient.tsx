@@ -1337,16 +1337,16 @@ function TransmissionsManager() {
             <span>Instagram CCTV Feeds & 3D Transmissions</span>
           </h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Posts, cookups, and reels displayed on the dedicated /transmissions page & 3D Rolodex.
+            Posts, cookups, and reels displayed on the CCTV surveillance section.
           </p>
         </div>
         <Link
-          href="/transmissions"
+          href="/#cctv-feed"
           target="_blank"
           className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-950/40 border border-red-800/60 hover:border-red-500 text-red-400 text-xs font-mono rounded"
         >
           <ExternalLink className="w-3.5 h-3.5" />
-          <span>Preview 3D Surveillance Grid</span>
+          <span>Preview CCTV Section</span>
         </Link>
       </div>
 

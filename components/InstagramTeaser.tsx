@@ -426,11 +426,13 @@ export function InstagramTeaser() {
             </a>
 
             <a
-              href="/transmissions"
+              href="https://www.instagram.com/amitdied/"
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-[0.18em] px-4 py-2.5 text-xs transition-all shadow-[0_0_25px_rgba(220,38,38,0.4)]"
             >
               <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span>Full CCTV Archive</span>
+              <span>Live Transmission Net</span>
             </a>
           </div>
         </div>
