@@ -1,65 +1,75 @@
 export const beats = [
   {
-    id: '1',
-    title: 'GOTHAM',
-    bpm: 140,
-    genre: 'Rage',
-    moodTags: ['Dark', 'Energetic', 'Aggressive'],
-    price: 29.99,
-    coverUrl: 'https://picsum.photos/seed/gotham/400/400',
-    audioUrl: '', // Placeholder
+    "id": "1",
+    "title": "GOTHAM",
+    "bpm": 140,
+    "genre": "Rage",
+    "moodTags": [
+      "Dark",
+      "Energetic",
+      "Aggressive"
+    ],
+    "price": 29.99,
+    "coverUrl": "https://picsum.photos/seed/gotham/400/400",
+    "audioUrl": ""
   },
   {
-    id: '2',
-    title: 'NIGHTFALL',
-    bpm: 128,
-    genre: 'Trap',
-    moodTags: ['Atmospheric', 'Melancholic', 'Deep'],
-    price: 29.99,
-    coverUrl: 'https://picsum.photos/seed/nightfall/400/400',
-    audioUrl: '', // Placeholder
+    "id": "4",
+    "title": "CATACOMBS",
+    "bpm": 120,
+    "genre": "Experimental",
+    "moodTags": [
+      "Eerie",
+      "Industrial",
+      "Heavy"
+    ],
+    "price": 24.99,
+    "coverUrl": "https://picsum.photos/seed/catacombs/400/400",
+    "audioUrl": ""
   },
   {
-    id: '3',
-    title: 'BLOOD MOON',
-    bpm: 144,
-    genre: 'Drill',
-    moodTags: ['Dark', 'Bouncy', 'Menacing'],
-    price: 34.99,
-    coverUrl: 'https://picsum.photos/seed/bloodmoon/400/400',
-    audioUrl: '', // Placeholder
+    "id": "6",
+    "title": "SOLITUDE",
+    "bpm": 110,
+    "genre": "Emotional",
+    "moodTags": [
+      "Sad",
+      "Reflective",
+      "Chill"
+    ],
+    "price": 24.99,
+    "coverUrl": "https://picsum.photos/seed/solitude/400/400",
+    "audioUrl": ""
   },
   {
-    id: '4',
-    title: 'CATACOMBS',
-    bpm: 120,
-    genre: 'Experimental',
-    moodTags: ['Eerie', 'Industrial', 'Heavy'],
-    price: 24.99,
-    coverUrl: 'https://picsum.photos/seed/catacombs/400/400',
-    audioUrl: '', // Placeholder
+    "title": "Test Beat",
+    "bpm": 120,
+    "price": 29.99,
+    "moodTags": [
+      "Dark",
+      "Energetic"
+    ],
+    "id": "custom-1780384470653",
+    "coverUrl": "/placeholder-cover.png"
   },
   {
-    id: '5',
-    title: 'TOXIC',
-    bpm: 160,
-    genre: 'Rage',
-    moodTags: ['Hyper', 'Dark', 'Distorted'],
-    price: 29.99,
-    coverUrl: 'https://picsum.photos/seed/toxic/400/400',
-    audioUrl: '', // Placeholder
-  },
-  {
-    id: '6',
-    title: 'SOLITUDE',
-    bpm: 110,
-    genre: 'Emotional',
-    moodTags: ['Sad', 'Reflective', 'Chill'],
-    price: 24.99,
-    coverUrl: 'https://picsum.photos/seed/solitude/400/400',
-    audioUrl: '', // Placeholder
+    "id": "custom-1790409535354",
+    "title": "BAD THINGS",
+    "producer": "AMITDIED",
+    "bpm": 70,
+    "key": "C min",
+    "genre": "Trap",
+    "price": 8,
+    "buyLink": "",
+    "description": "",
+    "coverUrl": "/uploads/1790409529864-d40e396f4e8c2d83dff77170ee34d264.jpg",
+    "audioUrl": "/uploads/1790409535213-bad_things.mp3",
+    "moodTags": [
+      "dark"
+    ]
   }
 ];
+
 
 export const portfolioMembers = [
   {
