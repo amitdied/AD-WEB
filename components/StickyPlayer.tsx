@@ -79,8 +79,16 @@ export function StickyPlayer() {
            <button className="text-zinc-400 hover:text-white">
               <Volume2 size={18} />
            </button>
-           <button className="bg-red-700 hover:bg-red-600 text-white text-sm font-medium px-4 py-1.5 rounded-sm transition-colors uppercase tracking-wider hidden sm:block">
-              ${currentTrack.price}
+           <button 
+             onClick={() => {
+               if (typeof window !== "undefined") {
+                 window.dispatchEvent(new CustomEvent("open-license-modal", { detail: currentTrack }));
+               }
+             }}
+             className="bg-red-700 hover:bg-red-600 text-white text-xs font-mono font-bold px-3 py-1.5 rounded-sm transition-all hover:shadow-[0_0_15px_rgba(220,38,38,0.5)] uppercase tracking-wider hidden sm:flex items-center gap-1.5 cursor-pointer"
+             title="Acquire Beat / Instant Instagram DM"
+           >
+              <span>Acquire ${currentTrack.price}</span>
            </button>
         </div>
       </div>

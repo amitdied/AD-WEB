@@ -17,7 +17,30 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**', // This allows any path under the hostname
       },
+      {
+        protocol: 'https',
+        hostname: 'img.youtube.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.cdninstagram.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
+  },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
   },
   output: 'standalone',
   transpilePackages: ['motion'],

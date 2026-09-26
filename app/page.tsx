@@ -1,15 +1,21 @@
 'use client';
+import dynamic from 'next/dynamic';
 import { AudioProvider } from '@/lib/AudioContext';
 import { Header } from '@/components/Header';
 import { Hero } from '@/components/Hero';
 import { BeatStore } from '@/components/BeatStore';
 import { StickyPlayer } from '@/components/StickyPlayer';
 import { Portfolio } from '@/components/Portfolio';
+import { InstagramTeaser } from '@/components/InstagramTeaser';
 import { Contact } from '@/components/Contact';
 import { IntroSequence } from '@/components/IntroSequence';
-import { ScrollSequence } from '@/components/ScrollSequence';
 import { ParallaxBackground } from '@/components/ParallaxBackground';
 import { OSBootProvider, useOSBoot } from '@/hooks/useOSBoot';
+
+const ScrollSequence = dynamic(
+  () => import('@/components/ScrollSequence').then((mod) => mod.ScrollSequence),
+  { ssr: false }
+);
 
 function AppContent() {
   const { isBooted } = useOSBoot();
@@ -28,6 +34,7 @@ function AppContent() {
         <ScrollSequence />
         <BeatStore />
         <Portfolio />
+        <InstagramTeaser />
         <Contact />
         <StickyPlayer />
       </main>

@@ -1,0 +1,115 @@
+{
+  "beats": [
+    {
+      "id": "1",
+      "title": "GOTHAM",
+      "bpm": 140,
+      "genre": "Rage",
+      "moodTags": [
+        "Dark",
+        "Energetic",
+        "Aggressive"
+      ],
+      "price": 29.99,
+      "coverUrl": "https://picsum.photos/seed/gotham/400/400",
+      "audioUrl": ""
+    },
+    {
+      "id": "4",
+      "title": "CATACOMBS",
+      "bpm": 120,
+      "genre": "Experimental",
+      "moodTags": [
+        "Eerie",
+        "Industrial",
+        "Heavy"
+      ],
+      "price": 24.99,
+      "coverUrl": "https://picsum.photos/seed/catacombs/400/400",
+      "audioUrl": ""
+    },
+    {
+      "id": "6",
+      "title": "SOLITUDE",
+      "bpm": 110,
+      "genre": "Emotional",
+      "moodTags": [
+        "Sad",
+        "Reflective",
+        "Chill"
+      ],
+      "price": 24.99,
+      "coverUrl": "https://picsum.photos/seed/solitude/400/400",
+      "audioUrl": ""
+    },
+    {
+      "title": "Test Beat",
+      "bpm": 120,
+      "price": 29.99,
+      "moodTags": [
+        "Dark",
+        "Energetic"
+      ],
+      "id": "custom-1780384470653",
+      "coverUrl": "/placeholder-cover.png"
+    }
+  ],
+  "videos": [
+    {
+      "id": "pYR7unUKdKY",
+      "url": "https://www.youtube.com/watch?v=pYR7unUKdKY",
+      "title": "Archive Video"
+    },
+    {
+      "id": "5kZc7-9Anhw",
+      "url": "https://www.youtube.com/watch?v=5kZc7-9Anhw",
+      "title": "Archive Video"
+    },
+    {
+      "id": "A589IGQGvY8",
+      "url": "https://www.youtube.com/watch?v=A589IGQGvY8",
+      "title": "Archive Video"
+    },
+    {
+      "id": "V7v7NNF_0fA",
+      "url": "https://www.youtube.com/watch?v=V7v7NNF_0fA",
+      "title": "Archive Video"
+    },
+    {
+      "id": "S1EN7-z2EEw",
+      "url": "https://www.youtube.com/watch?v=S1EN7-z2EEw",
+      "title": "Archive Video"
+    },
+    {
+      "id": "N0UfKREgBGk",
+      "url": "https://www.youtube.com/watch?v=N0UfKREgBGk",
+      "title": "Archive Video"
+    },
+    {
+      "id": "kQ4vdLGK-OE",
+      "url": "https://www.youtube.com/watch?v=kQ4vdLGK-OE",
+      "title": "Archive Video"
+    },
+    {
+      "id": "VXc6GPVYySQ",
+      "url": "https://www.youtube.com/watch?v=VXc6GPVYySQ",
+      "title": "Archive Video"
+    },
+    {
+      "id": "UX06SubfGeI",
+      "url": "https://www.youtube.com/watch?v=UX06SubfGeI",
+      "title": "Archive Video"
+    },
+    {
+      "id": "G9ZP70GjmHQ",
+      "url": "https://www.youtube.com/watch?v=G9ZP70GjmHQ",
+      "title": "Archive Video"
+    }
+  ],
+  "deletedIds": [
+    "2",
+    "3",
+    "5"
+  ],
+  "_isInitialized": true
+}

@@ -28,12 +28,11 @@ export function ScrollSequence() {
       touchMultiplier: 2,
     });
 
-    let rafId: number;
     function raf(time: number) {
       lenis.raf(time);
-      rafId = requestAnimationFrame(raf);
+      requestAnimationFrame(raf);
     }
-    rafId = requestAnimationFrame(raf);
+    requestAnimationFrame(raf);
 
     if (containerRef.current) {
       ScrollTrigger.create({
@@ -48,7 +47,6 @@ export function ScrollSequence() {
     }
 
     return () => {
-      cancelAnimationFrame(rafId);
       lenis.destroy();
       ScrollTrigger.getAll().forEach(t => t.kill());
     };
@@ -115,19 +113,15 @@ export function ScrollSequence() {
             </Environment>
 
             {/* Stage 1: CD inserts into player (progress 0 to 0.4) */}
-            {scrollProgress < 0.6 && (
-              <group>
-                <CDAnimation progress={scrollProgress * 2.5} />
-                <MusicSystem progress={scrollProgress * 2.5} />
-              </group>
-            )}
+            <group visible={scrollProgress < 0.5}>
+              <CDAnimation progress={scrollProgress * 2.5} />
+              <MusicSystem progress={scrollProgress * 2.5} />
+            </group>
 
             {/* Stage 2: Abstract Dancer scene (progress 0.5 to 1.0) */}
-            {scrollProgress >= 0.4 && (
-              <group>
-                <DancerScene progress={(scrollProgress - 0.4) * 1.66} />
-              </group>
-            )}
+            <group visible={scrollProgress >= 0.4}>
+              <DancerScene progress={(scrollProgress - 0.4) * 1.66} />
+            </group>
             
           </Canvas>
         </div>

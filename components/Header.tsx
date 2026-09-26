@@ -2,7 +2,7 @@
 import { motion, useScroll, useMotionValueEvent } from 'motion/react';
 import Link from 'next/link';
 import { useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Lock } from 'lucide-react';
 
 export function Header() {
   const { scrollY } = useScroll();
@@ -23,17 +23,43 @@ export function Header() {
             <span className="text-[10px] bg-red-600/20 text-red-500 px-2 py-0.5 rounded-sm border border-red-500/30 hidden sm:block">SYS.1</span>
           </Link>
           
-          <nav className="hidden md:flex gap-10 text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 relative z-50">
-            {['Store', 'Portfolio', 'About', 'Contact'].map((item) => (
+          <nav className="hidden md:flex items-center gap-7 text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 relative z-50">
+            {['Store', 'Portfolio'].map((item) => (
                <Link 
                  key={item} 
-                 href={`#${item.toLowerCase()}`} 
+                 href={`/#${item.toLowerCase()}`} 
                  className="relative group hover:text-white transition-colors"
                >
                  {item}
                  <span className="absolute -bottom-2 left-0 w-0 h-[2px] bg-red-600 transition-all duration-300 group-hover:w-full" />
                </Link>
             ))}
+            <Link 
+              href="/transmissions" 
+              className="relative group text-red-400 hover:text-white transition-colors flex items-center gap-1.5"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping inline-block" />
+              <span>CCTV Feed</span>
+              <span className="absolute -bottom-2 left-0 w-0 h-[2px] bg-red-600 transition-all duration-300 group-hover:w-full" />
+            </Link>
+            {['About', 'Contact'].map((item) => (
+               <Link 
+                 key={item} 
+                 href={`/#${item.toLowerCase()}`} 
+                 className="relative group hover:text-white transition-colors"
+               >
+                 {item}
+                 <span className="absolute -bottom-2 left-0 w-0 h-[2px] bg-red-600 transition-all duration-300 group-hover:w-full" />
+               </Link>
+            ))}
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 text-zinc-500 hover:text-red-500 transition-colors border border-zinc-800/80 hover:border-red-600/50 px-2.5 py-1 rounded text-[10px] tracking-wider"
+              title="Admin Panel"
+            >
+              <Lock className="w-3 h-3 text-red-500" />
+              <span>Admin</span>
+            </Link>
           </nav>
 
           <button 
@@ -57,8 +83,8 @@ export function Header() {
          {/* Noise overlay */}
          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none" />
          
-         <nav className="flex flex-col gap-8 text-center">
-            {['Store', 'Portfolio', 'About', 'Contact'].map((item, i) => (
+         <nav className="flex flex-col gap-6 text-center">
+            {['Store', 'Portfolio'].map((item, i) => (
                <motion.div
                   key={item}
                   initial={{ opacity: 0, y: 20 }}
@@ -66,14 +92,58 @@ export function Header() {
                   transition={{ duration: 0.5, delay: menuOpen ? 0.2 + (i * 0.1) : 0 }}
                >
                   <Link 
-                     href={`#${item.toLowerCase()}`} 
+                     href={`/#${item.toLowerCase()}`} 
                      onClick={() => setMenuOpen(false)}
-                     className="font-display font-black text-5xl uppercase tracking-tighter hover:text-red-500 transition-colors"
+                     className="font-display font-black text-4xl sm:text-5xl uppercase tracking-tighter hover:text-red-500 transition-colors"
                   >
                      {item}
                   </Link>
                </motion.div>
             ))}
+            <motion.div
+               initial={{ opacity: 0, y: 20 }}
+               animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : 20 }}
+               transition={{ duration: 0.5, delay: menuOpen ? 0.4 : 0 }}
+            >
+               <Link 
+                  href="/transmissions" 
+                  onClick={() => setMenuOpen(false)}
+                  className="font-display font-black text-4xl sm:text-5xl uppercase tracking-tighter text-red-500 hover:text-white transition-colors flex items-center justify-center gap-2"
+               >
+                  <span>CCTV Intercept</span>
+               </Link>
+            </motion.div>
+            {['About', 'Contact'].map((item, i) => (
+               <motion.div
+                  key={item}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : 20 }}
+                  transition={{ duration: 0.5, delay: menuOpen ? 0.5 + (i * 0.1) : 0 }}
+               >
+                  <Link 
+                     href={`/#${item.toLowerCase()}`} 
+                     onClick={() => setMenuOpen(false)}
+                     className="font-display font-black text-4xl sm:text-5xl uppercase tracking-tighter hover:text-red-500 transition-colors"
+                  >
+                     {item}
+                  </Link>
+               </motion.div>
+            ))}
+            <motion.div
+               initial={{ opacity: 0, y: 20 }}
+               animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : 20 }}
+               transition={{ duration: 0.5, delay: 0.7 }}
+               className="pt-2"
+            >
+               <Link 
+                  href="/admin" 
+                  onClick={() => setMenuOpen(false)}
+                  className="inline-flex items-center gap-2 text-sm uppercase font-mono tracking-widest text-zinc-500 hover:text-red-500 transition-colors border border-zinc-800 px-4 py-2 rounded-full"
+               >
+                  <Lock className="w-3.5 h-3.5 text-red-500" />
+                  <span>Admin Portal</span>
+               </Link>
+            </motion.div>
          </nav>
       </motion.div>
     </>
