@@ -36,7 +36,7 @@ import {
   deleteTransmission,
 } from "./data-actions";
 
-type Tab = "songs" | "videos" | "transmissions";
+type Tab = "songs" | "videos";
 
 export default function AdminDashboardClient() {
   const [activeTab, setActiveTab] = useState<Tab>("songs");
@@ -81,11 +81,6 @@ export default function AdminDashboardClient() {
       id: "videos" as Tab,
       label: "Portfolio Videos",
       icon: <Video className="w-5 h-5" />,
-    },
-    {
-      id: "transmissions" as Tab,
-      label: "Instagram CCTV Feed",
-      icon: <Instagram className="w-5 h-5" />,
     },
   ];
 
@@ -245,10 +240,8 @@ export default function AdminDashboardClient() {
           >
             {activeTab === "songs" ? (
               <BeatsManager />
-            ) : activeTab === "videos" ? (
-              <VideosManager />
             ) : (
-              <TransmissionsManager />
+              <VideosManager />
             )}
           </motion.div>
         </AnimatePresence>
