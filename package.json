@@ -15,6 +15,7 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@studio-freight/lenis": "^1.0.42",
+    "@supabase/supabase-js": "^2.117.2",
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -23,7 +23,7 @@ export function BeatStore() {
   const [selectedBeatForLicense, setSelectedBeatForLicense] = useState<any | null>(null);
 
   useEffect(() => {
-    fetch("/api/beats")
+    fetch("/api/beats", { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error("Network error");
         return res.json();

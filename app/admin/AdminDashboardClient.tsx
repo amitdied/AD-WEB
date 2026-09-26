@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Music,
+  Upload,
   Video,
   LogOut,
   Plus,
@@ -144,6 +145,18 @@ export default function AdminDashboardClient() {
           </Link>
         </div>
 
+                <div className="px-4 mb-3">
+          <Link
+            href="/admin/beats"
+            className="w-full flex items-center justify-between px-3.5 py-2.5 bg-red-600/10 hover:bg-red-600/20 border border-red-600/30 hover:border-red-600/50 text-red-400 hover:text-red-300 rounded-lg transition-colors text-xs font-semibold group shadow-[0_0_15px_rgba(239,68,68,0.15)]"
+          >
+            <span className="flex items-center gap-2">
+              <Upload className="w-3.5 h-3.5 text-red-500 group-hover:scale-110 transition-transform" />
+              <span>Direct Beat Uploader</span>
+            </span>
+            <span className="text-[10px] bg-red-600/20 text-red-400 px-1.5 py-0.5 rounded font-mono">NEW</span>
+          </Link>
+        </div>
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
           {tabs.map((tab) => (
             <button
