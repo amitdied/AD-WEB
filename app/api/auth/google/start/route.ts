@@ -6,7 +6,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    const isConnect = req.nextUrl.searchParams.get('mode') === 'connect';
     const state = generateOAuthState();
+    const stateCookieValue = isConnect ? `${state}:connect` : state;
 
     const redirectUri = GOOGLE_CONFIG.REDIRECT_URI;
 
@@ -21,8 +23,8 @@ export async function GET(req: NextRequest) {
 
     const response = NextResponse.redirect(authUrl.toString());
 
-    // Secure HTTP-only state cookie for CSRF protection
-    response.cookies.set(STATE_COOKIE_NAME, state, {
+    // Secure HTTP-only state cookie for CSRF and mode tracking
+    response.cookies.set(STATE_COOKIE_NAME, stateCookieValue, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -34,7 +36,7 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error('Error starting Google OAuth:', error);
     return NextResponse.redirect(
-      new URL('/admin/login?error=oauth_start_failed', req.url)
+      new URL('/admin/login?code=SESSION_FAILED&detail=oauth_start_failed', req.url)
     );
   }
 }

@@ -1,13 +1,14 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { cookies } from 'next/headers';
 import { GOOGLE_CONFIG } from './config';
 
-const TOKENS_PATH = path.join(process.cwd(), 'data', 'google-tokens.json');
 const SESSION_SECRET = process.env.SESSION_SECRET || GOOGLE_CONFIG.CLIENT_SECRET || 'amitdied-secure-oauth-secret-key';
 export const SESSION_COOKIE_NAME = 'admin_session';
 export const STATE_COOKIE_NAME = 'google_oauth_state';
+
+// In-memory access token cache (never written to or read from disk)
+let memoryAccessToken: string | null = null;
+let memoryTokenExpiry: number = 0;
 
 export interface StoredTokens {
   access_token: string;
@@ -31,40 +32,31 @@ export interface AdminSession {
   hasGoogleTokens: boolean;
 }
 
-// Ensure data directory exists
-function ensureDataDir() {
-  const dir = path.dirname(TOKENS_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
-// Read tokens from disk
+// In-memory token representations (never touches disk)
 export function getStoredTokens(): StoredTokens | null {
-  try {
-    if (!fs.existsSync(TOKENS_PATH)) return null;
-    const content = fs.readFileSync(TOKENS_PATH, 'utf8');
-    return JSON.parse(content);
-  } catch (e) {
-    console.error('Error reading stored Google tokens:', e);
-    return null;
-  }
-}
-
-// Save tokens to disk
-export function saveStoredTokens(newTokens: Partial<StoredTokens>): StoredTokens {
-  ensureDataDir();
-  const existing = getStoredTokens() || { access_token: '' };
-  const merged: StoredTokens = {
-    ...existing,
-    ...newTokens,
-    // Keep existing refresh_token if Google did not return a new one on this exchange
-    refresh_token: newTokens.refresh_token || existing.refresh_token,
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || GOOGLE_CONFIG.REFRESH_TOKEN;
+  if (!refreshToken && !memoryAccessToken) return null;
+  return {
+    access_token: memoryAccessToken || '',
+    refresh_token: refreshToken || '',
+    user: {
+      email: GOOGLE_CONFIG.ADMIN_EMAIL,
+      name: 'AMITDIED',
+    },
     updated_at: new Date().toISOString(),
   };
+}
 
-  fs.writeFileSync(TOKENS_PATH, JSON.stringify(merged, null, 2), 'utf8');
-  return merged;
+export function saveStoredTokens(newTokens: Partial<StoredTokens>): StoredTokens {
+  if (newTokens.access_token) {
+    memoryAccessToken = newTokens.access_token;
+    memoryTokenExpiry = newTokens.expiry_date || Date.now() + 3600 * 1000;
+  }
+  return {
+    access_token: memoryAccessToken || '',
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN || GOOGLE_CONFIG.REFRESH_TOKEN || '',
+    updated_at: new Date().toISOString(),
+  };
 }
 
 // Generate random secure token for CSRF state
@@ -98,7 +90,6 @@ export function verifySessionToken(token: string): any | null {
     }
 
     const payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
-    // Check expiry (e.g. 7 days)
     if (payload.exp && Date.now() > payload.exp) {
       return null;
     }
@@ -111,6 +102,13 @@ export function verifySessionToken(token: string): any | null {
 // Exchange code for tokens
 export async function exchangeCodeForTokens(code: string, redirectUri?: string) {
   const targetRedirectUri = redirectUri || GOOGLE_CONFIG.REDIRECT_URI;
+
+  if (!GOOGLE_CONFIG.CLIENT_ID) {
+    throw new Error('MISSING_ENV: GOOGLE_CLIENT_ID');
+  }
+  if (!GOOGLE_CONFIG.CLIENT_SECRET) {
+    throw new Error('MISSING_ENV: GOOGLE_CLIENT_SECRET');
+  }
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -129,7 +127,6 @@ export async function exchangeCodeForTokens(code: string, redirectUri?: string) 
     throw new Error(data.error_description || data.error || 'Failed to exchange OAuth code');
   }
 
-  // Calculate expiry date
   const expiryDate = data.expires_in
     ? Date.now() + data.expires_in * 1000
     : undefined;
@@ -158,50 +155,62 @@ export async function fetchGoogleUserInfo(accessToken: string) {
   return await res.json();
 }
 
-// Refresh access token if expired or close to expiry (within 2 minutes)
-export async function getValidAccessToken(): Promise<string | null> {
-  const stored = getStoredTokens();
-  if (!stored || !stored.access_token) {
-    return null;
+/**
+ * Gets an active access token ONLY from the environment variable GOOGLE_REFRESH_TOKEN.
+ * Never reads or writes files on disk. Refreshes in memory when needed.
+ */
+export async function getValidAccessToken(): Promise<string> {
+  // Check in-memory cache (with 60-second buffer)
+  if (memoryAccessToken && Date.now() < memoryTokenExpiry - 60 * 1000) {
+    return memoryAccessToken;
   }
 
-  // If not close to expiry, return existing token
-  const twoMinutes = 2 * 60 * 1000;
-  if (stored.expiry_date && stored.expiry_date - Date.now() > twoMinutes) {
-    return stored.access_token;
+  if (!GOOGLE_CONFIG.CLIENT_ID) {
+    console.error('[AUTH ERROR] Missing GOOGLE_CLIENT_ID in environment variables');
+    throw new Error('MISSING_ENV: GOOGLE_CLIENT_ID');
+  }
+  if (!GOOGLE_CONFIG.CLIENT_SECRET) {
+    console.error('[AUTH ERROR] Missing GOOGLE_CLIENT_SECRET in environment variables');
+    throw new Error('MISSING_ENV: GOOGLE_CLIENT_SECRET');
   }
 
-  // If expired or about to expire and we have a refresh_token, refresh it
-  if (stored.refresh_token) {
-    try {
-      const res = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: GOOGLE_CONFIG.CLIENT_ID,
-          client_secret: GOOGLE_CONFIG.CLIENT_SECRET,
-          refresh_token: stored.refresh_token,
-          grant_type: 'refresh_token',
-        }),
-      });
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || GOOGLE_CONFIG.REFRESH_TOKEN;
+  if (!refreshToken) {
+    console.error('[AUTH ERROR] GOOGLE_REFRESH_TOKEN is not set in environment variables');
+    throw new Error('DRIVE_AUTH_MISSING_REFRESH_TOKEN');
+  }
 
-      const data = await res.json();
-      if (res.ok && data.access_token) {
-        const updated = saveStoredTokens({
-          access_token: data.access_token,
-          expiry_date: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
-          scope: data.scope || stored.scope,
-        });
-        return updated.access_token;
-      } else {
-        console.error('Failed to refresh token:', data);
-      }
-    } catch (e) {
-      console.error('Error refreshing Google access token:', e);
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: GOOGLE_CONFIG.CLIENT_ID,
+        client_secret: GOOGLE_CONFIG.CLIENT_SECRET,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.access_token) {
+      const errorName = data.error || 'token_refresh_failed';
+      console.error('[AUTH ERROR] Google rejected refresh token:', errorName);
+      throw new Error(`DRIVE_AUTH_FAILED: ${errorName}`);
     }
-  }
 
-  return stored.access_token;
+    memoryAccessToken = String(data.access_token);
+    const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 3600;
+    memoryTokenExpiry = Date.now() + expiresIn * 1000;
+
+    return memoryAccessToken;
+  } catch (err: any) {
+    if (err?.message?.startsWith('DRIVE_AUTH_') || err?.message?.startsWith('MISSING_ENV:')) {
+      throw err;
+    }
+    console.error('[AUTH ERROR] Refresh token network request error:', err?.message || err);
+    throw new Error('DRIVE_AUTH_FAILED: network_error');
+  }
 }
 
 // Check admin session from Next.js server components or actions
@@ -226,13 +235,13 @@ export async function getAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  const tokens = getStoredTokens();
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || GOOGLE_CONFIG.REFRESH_TOKEN;
 
   return {
     isAuthenticated: true,
     email: payload.email,
     name: payload.name || 'AMITDIED',
     picture: payload.picture || '',
-    hasGoogleTokens: Boolean(tokens?.access_token),
+    hasGoogleTokens: Boolean(refreshToken || memoryAccessToken),
   };
 }

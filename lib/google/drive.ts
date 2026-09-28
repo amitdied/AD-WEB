@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { GOOGLE_CONFIG } from './config';
 import { getValidAccessToken } from './auth';
 
@@ -30,7 +28,8 @@ export function getFolderIdForType(folderType: DriveFolderType): string {
 
 /**
  * Upload a file directly to the appropriate Google Drive folder.
- * Falls back to local storage if Google OAuth is not yet authenticated.
+ * Uses access token refreshed in memory from GOOGLE_REFRESH_TOKEN.
+ * Never writes or reads files on disk.
  */
 export async function uploadToGoogleDrive(
   buffer: Buffer,
@@ -39,13 +38,13 @@ export async function uploadToGoogleDrive(
   folderType: DriveFolderType
 ): Promise<DriveUploadResult> {
   const folderId = getFolderIdForType(folderType);
-  const accessToken = await getValidAccessToken();
-
-  // If no Google access token is available, save to local uploads directory as fallback
-  if (!accessToken) {
-    console.warn(`[DRIVE] No Google access token available. Saving ${fileName} locally.`);
-    return saveLocally(buffer, fileName, mimeType, folderType);
+  if (!folderId) {
+    console.error(`[DRIVE ERROR] Missing folder ID for ${folderType}`);
+    throw new Error(`MISSING_ENV: GOOGLE_DRIVE_${folderType.toUpperCase()}_FOLDER_ID`);
   }
+
+  // Obtain access token from memory / GOOGLE_REFRESH_TOKEN (throws clean safe error if missing/rejected)
+  const accessToken = await getValidAccessToken();
 
   try {
     const boundary = '-------314159265358979323846';
@@ -85,14 +84,14 @@ export async function uploadToGoogleDrive(
 
     if (!uploadRes.ok) {
       const errText = await uploadRes.text();
-      console.error('[DRIVE] Upload failed with status', uploadRes.status, errText);
-      throw new Error(`Google Drive upload failed: ${uploadRes.statusText}`);
+      console.error('[DRIVE ERROR] Google Drive upload failed:', uploadRes.status, errText);
+      throw new Error(`DRIVE_UPLOAD_FAILED: status_${uploadRes.status}`);
     }
 
     const fileData = await uploadRes.json();
     const fileId = fileData.id;
 
-    // Grant read permission to anyone with link so audio and images can be streamed/displayed
+    // Grant public read permission so asset can be streamed via /api/drive/media
     try {
       await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
         method: 'POST',
@@ -105,12 +104,11 @@ export async function uploadToGoogleDrive(
           type: 'anyone',
         }),
       });
-    } catch (permErr) {
-      console.warn('[DRIVE] Could not set public permission on file', fileId, permErr);
+    } catch (permErr: any) {
+      console.warn('[DRIVE] Could not set public permission on file', fileId);
     }
 
-    // Streamable URL: routed via our streaming proxy `/api/drive/media?id=fileId`
-    // which handles range requests (essential for HTML5 <audio> scrubber)
+    // Streamable proxy URL
     const streamUrl = `/api/drive/media?id=${fileId}`;
 
     return {
@@ -123,35 +121,10 @@ export async function uploadToGoogleDrive(
       folderId,
     };
   } catch (error: any) {
-    console.error('[DRIVE] Error uploading to Google Drive:', error);
-    console.warn('[DRIVE] Falling back to local storage for:', fileName);
-    return saveLocally(buffer, fileName, mimeType, folderType);
+    if (error?.message?.startsWith('DRIVE_') || error?.message?.startsWith('MISSING_ENV:')) {
+      throw error;
+    }
+    console.error('[DRIVE ERROR] Error uploading to Google Drive:', error?.message || error);
+    throw new Error('DRIVE_UPLOAD_FAILED: network_error');
   }
-}
-
-function saveLocally(
-  buffer: Buffer,
-  fileName: string,
-  mimeType: string,
-  folderType: DriveFolderType
-): DriveUploadResult {
-  const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-
-  const safeName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-  const uniqueName = `${Date.now()}-${safeName}`;
-  const filePath = path.join(uploadDir, uniqueName);
-
-  fs.writeFileSync(filePath, buffer);
-
-  return {
-    url: `/uploads/${uniqueName}`,
-    name: uniqueName,
-    size: buffer.length,
-    mimeType,
-    isDrive: false,
-    folderId: getFolderIdForType(folderType),
-  };
 }

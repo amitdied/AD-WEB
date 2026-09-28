@@ -318,8 +318,9 @@ export async function addBeat(beat: any) {
   // Sync with Google Sheet BEATS tab
   try {
     await writeAllBeatsToSheet(db.beats);
-  } catch (e) {
-    console.warn("Failed to sync new beat to Google Sheet:", e);
+  } catch (e: any) {
+    console.error("Failed to sync new beat to Google Sheet:", e);
+    throw new Error(e?.message || "SHEETS_SYNC_FAILED");
   }
 
   revalidatePath("/");
@@ -370,8 +371,9 @@ export async function updateBeat(id: string, updatedData: any) {
   // Sync to Google Sheet BEATS tab
   try {
     await writeAllBeatsToSheet(db.beats);
-  } catch (e) {
-    console.warn("Failed to sync updated beat to Google Sheet:", e);
+  } catch (e: any) {
+    console.error("Failed to sync updated beat to Google Sheet:", e);
+    throw new Error(e?.message || "SHEETS_SYNC_FAILED");
   }
 
   revalidatePath("/");

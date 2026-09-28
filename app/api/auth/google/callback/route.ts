@@ -57,9 +57,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 3. CSRF State Validation
-    const stateCookie = req.cookies.get(STATE_COOKIE_NAME)?.value;
-    if (!state || !stateCookie || state !== stateCookie) {
+    // 3. CSRF State & Connect Mode Validation
+    const rawStateCookie = req.cookies.get(STATE_COOKIE_NAME)?.value || '';
+    const [expectedState, mode] = rawStateCookie.split(':');
+    const isConnectMode = mode === 'connect';
+
+    if (!state || !expectedState || state !== expectedState) {
       console.error(
         '[AUTH ERROR] OAuth state verification failed or state cookie expired. Reason: STATE_MISMATCH'
       );
@@ -83,7 +86,6 @@ export async function GET(req: NextRequest) {
       const rawMessage = String(tokenErr?.message || 'token_exchange_failed');
       console.error('[AUTH ERROR] Token exchange failed with Google:', rawMessage);
 
-      // Extract specific Google error code like invalid_grant, invalid_client, redirect_uri_mismatch
       const match = rawMessage.match(
         /\b(invalid_grant|invalid_client|invalid_request|unauthorized_client|unsupported_grant_type|redirect_uri_mismatch)\b/i
       );
@@ -105,7 +107,7 @@ export async function GET(req: NextRequest) {
       userInfo = await fetchGoogleUserInfo(tokens.access_token);
     } catch (userErr: any) {
       const userErrName = userErr?.name || 'userinfo_failed';
-      console.error('[AUTH ERROR] Failed to fetch Google user profile info:', userErrName, userErr?.message);
+      console.error('[AUTH ERROR] Failed to fetch Google user profile info:', userErrName);
       return NextResponse.redirect(
         new URL(`/admin/login?code=TOKEN_EXCHANGE_FAILED&detail=${encodeURIComponent(userErrName)}`, baseAppUrl)
       );
@@ -129,21 +131,38 @@ export async function GET(req: NextRequest) {
       return unauthResponse;
     }
 
-    // 7. Persist tokens (graceful fallback in read-only serverless filesystems)
-    try {
-      saveStoredTokens({
-        ...tokens,
-        user: {
-          email: userInfo.email,
-          name: userInfo.name,
-          picture: userInfo.picture,
-        },
+    // 7. Check if this is the "connect" flow for Drive & Sheets
+    if (isConnectMode) {
+      if (!tokens.refresh_token) {
+        console.error('[AUTH ERROR] Google did not return a refresh token during connect flow.');
+        return NextResponse.redirect(
+          new URL('/admin/connect-google?error=NO_REFRESH_TOKEN', baseAppUrl)
+        );
+      }
+
+      // Put the refresh token in a short-lived (5 minute), HTTP-only, Secure cookie and redirect to /admin/connect-google
+      const connectResponse = NextResponse.redirect(new URL('/admin/connect-google', baseAppUrl));
+      connectResponse.cookies.set('google_connect_refresh_token', tokens.refresh_token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 5 * 60, // 5 minutes
       });
-    } catch (storageErr: any) {
-      console.warn('[AUTH WARNING] Failed to persist tokens to disk:', storageErr?.message || storageErr);
+      connectResponse.cookies.delete(STATE_COOKIE_NAME);
+      return connectResponse;
     }
 
-    // 8. Sign session token
+    // 8. Normal Login Mode: Save in-memory tokens & create signed admin session
+    saveStoredTokens({
+      ...tokens,
+      user: {
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture,
+      },
+    });
+
     let sessionToken: string;
     try {
       sessionToken = signSessionPayload({
@@ -155,13 +174,13 @@ export async function GET(req: NextRequest) {
       });
     } catch (signErr: any) {
       const errName = signErr?.name || 'sign_session_failed';
-      console.error('[AUTH ERROR] Failed to sign session token:', errName, signErr?.message);
+      console.error('[AUTH ERROR] Failed to sign session token:', errName);
       return NextResponse.redirect(
         new URL(`/admin/login?code=SESSION_FAILED&detail=${encodeURIComponent(errName)}`, baseAppUrl)
       );
     }
 
-    // 9. Redirect directly to /admin using NextResponse.redirect and attach session cookie
+    // Redirect directly to /admin using NextResponse.redirect and attach session cookie
     const adminUrl = new URL('/admin', process.env.APP_URL || 'https://amitdied.vercel.app');
     const response = NextResponse.redirect(adminUrl);
 
@@ -177,7 +196,6 @@ export async function GET(req: NextRequest) {
 
     return response;
   } catch (err: any) {
-    // Re-throw if a framework redirect error was raised
     if (err?.message === 'NEXT_REDIRECT' || err?.digest?.startsWith('NEXT_REDIRECT')) {
       throw err;
     }
@@ -188,7 +206,7 @@ export async function GET(req: NextRequest) {
       ? errName
       : (errMessage.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32) || 'unknown_error');
 
-    console.error('[AUTH ERROR] Exception in OAuth callback route:', safeErrorDetail, errMessage);
+    console.error('[AUTH ERROR] Exception in OAuth callback route:', safeErrorDetail);
     return NextResponse.redirect(
       new URL(
         `/admin/login?code=SESSION_FAILED&detail=${encodeURIComponent(safeErrorDetail)}`,

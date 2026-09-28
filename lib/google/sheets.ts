@@ -44,10 +44,12 @@ export const CCTV_HEADERS = [
 ];
 
 async function callSheetsApi(endpoint: string, options: RequestInit = {}) {
-  const token = await getValidAccessToken();
-  if (!token) {
-    return null;
+  if (!GOOGLE_CONFIG.SHEET_ID) {
+    console.error('[SHEETS ERROR] Missing GOOGLE_SHEET_ID environment variable');
+    throw new Error('MISSING_ENV: GOOGLE_SHEET_ID');
   }
+
+  const token = await getValidAccessToken();
 
   const res = await fetch(`${BASE_URL}${endpoint}`, {
     ...options,
@@ -60,8 +62,22 @@ async function callSheetsApi(endpoint: string, options: RequestInit = {}) {
 
   if (!res.ok) {
     const errorText = await res.text();
-    console.warn(`[SHEETS API] Error on ${endpoint} (${res.status}):`, errorText);
-    return null;
+    console.error(`[SHEETS API ERROR] Status ${res.status} on ${endpoint}:`, errorText);
+
+    // Identify if the error is due to a missing sheet tab
+    if (res.status === 400 || res.status === 404) {
+      if (endpoint.includes('BEATS') || errorText.includes('BEATS')) {
+        throw new Error('SHEETS_TAB_NOT_FOUND: BEATS');
+      }
+      if (endpoint.includes('PORTFOLIO') || errorText.includes('PORTFOLIO')) {
+        throw new Error('SHEETS_TAB_NOT_FOUND: PORTFOLIO');
+      }
+      if (endpoint.includes('CCTV') || errorText.includes('CCTV')) {
+        throw new Error('SHEETS_TAB_NOT_FOUND: CCTV');
+      }
+    }
+
+    throw new Error(`SHEETS_API_ERROR: status_${res.status}`);
   }
 
   return await res.json();
@@ -71,14 +87,20 @@ async function callSheetsApi(endpoint: string, options: RequestInit = {}) {
  * Verifies or initializes the 3 required tabs: BEATS, PORTFOLIO, CCTV
  */
 export async function ensureSheetTabsExist(): Promise<boolean> {
-  const meta = await callSheetsApi('');
-  if (!meta || !Array.isArray(meta.sheets)) {
-    return false;
+  let meta;
+  try {
+    meta = await callSheetsApi('');
+  } catch (err: any) {
+    if (err?.message?.startsWith('SHEETS_TAB_NOT_FOUND')) {
+      // Continue to create tabs
+    } else {
+      throw err;
+    }
   }
 
-  const existingSheetTitles = meta.sheets.map(
-    (s: any) => s.properties?.title
-  ) as string[];
+  const existingSheetTitles = Array.isArray(meta?.sheets)
+    ? (meta.sheets.map((s: any) => s.properties?.title) as string[])
+    : [];
 
   const requiredSheets = ['BEATS', 'PORTFOLIO', 'CCTV'];
   const missingSheets = requiredSheets.filter(
@@ -96,10 +118,15 @@ export async function ensureSheetTabsExist(): Promise<boolean> {
       },
     }));
 
-    await callSheetsApi(':batchUpdate', {
-      method: 'POST',
-      body: JSON.stringify({ requests }),
-    });
+    try {
+      await callSheetsApi(':batchUpdate', {
+        method: 'POST',
+        body: JSON.stringify({ requests }),
+      });
+    } catch (batchErr: any) {
+      console.error('[SHEETS ERROR] Failed to batch create sheet tabs:', batchErr?.message);
+      throw new Error(`SHEETS_TAB_NOT_FOUND: ${missingSheets[0]}`);
+    }
 
     // Write header rows for the newly added sheets
     for (const title of missingSheets) {
@@ -195,14 +222,21 @@ export async function writeAllBeatsToSheet(beatsList: any[]) {
     new Date().toISOString(),
   ]);
 
-  // Clear existing content and rewrite with headers
-  await callSheetsApi('/values/BEATS!A1:M1000:clear', { method: 'POST' });
-  await callSheetsApi('/values/BEATS!A1:M?valueInputOption=USER_ENTERED', {
-    method: 'PUT',
-    body: JSON.stringify({
-      values: [BEAT_HEADERS, ...rows],
-    }),
-  });
+  try {
+    await callSheetsApi('/values/BEATS!A1:M1000:clear', { method: 'POST' });
+    await callSheetsApi('/values/BEATS!A1:M?valueInputOption=USER_ENTERED', {
+      method: 'PUT',
+      body: JSON.stringify({
+        values: [BEAT_HEADERS, ...rows],
+      }),
+    });
+  } catch (err: any) {
+    if (err?.message?.startsWith('SHEETS_') || err?.message?.startsWith('DRIVE_') || err?.message?.startsWith('MISSING_ENV:')) {
+      throw err;
+    }
+    console.error('[SHEETS ERROR] Failed writing beats to Google Sheet:', err?.message || err);
+    throw new Error('SHEETS_TAB_NOT_FOUND: BEATS');
+  }
 }
 
 // ==========================================
@@ -237,13 +271,21 @@ export async function writeAllPortfolioToSheet(videosList: any[]) {
     new Date().toISOString(),
   ]);
 
-  await callSheetsApi('/values/PORTFOLIO!A1:E500:clear', { method: 'POST' });
-  await callSheetsApi('/values/PORTFOLIO!A1:E?valueInputOption=USER_ENTERED', {
-    method: 'PUT',
-    body: JSON.stringify({
-      values: [PORTFOLIO_HEADERS, ...rows],
-    }),
-  });
+  try {
+    await callSheetsApi('/values/PORTFOLIO!A1:E500:clear', { method: 'POST' });
+    await callSheetsApi('/values/PORTFOLIO!A1:E?valueInputOption=USER_ENTERED', {
+      method: 'PUT',
+      body: JSON.stringify({
+        values: [PORTFOLIO_HEADERS, ...rows],
+      }),
+    });
+  } catch (err: any) {
+    if (err?.message?.startsWith('SHEETS_') || err?.message?.startsWith('DRIVE_') || err?.message?.startsWith('MISSING_ENV:')) {
+      throw err;
+    }
+    console.error('[SHEETS ERROR] Failed writing portfolio to Google Sheet:', err?.message || err);
+    throw new Error('SHEETS_TAB_NOT_FOUND: PORTFOLIO');
+  }
 }
 
 // ==========================================
@@ -310,11 +352,19 @@ export async function writeAllCctvToSheet(cctvList: any[]) {
     new Date().toISOString(),
   ]);
 
-  await callSheetsApi('/values/CCTV!A1:L500:clear', { method: 'POST' });
-  await callSheetsApi('/values/CCTV!A1:L?valueInputOption=USER_ENTERED', {
-    method: 'PUT',
-    body: JSON.stringify({
-      values: [CCTV_HEADERS, ...rows],
-    }),
-  });
+  try {
+    await callSheetsApi('/values/CCTV!A1:L500:clear', { method: 'POST' });
+    await callSheetsApi('/values/CCTV!A1:L?valueInputOption=USER_ENTERED', {
+      method: 'PUT',
+      body: JSON.stringify({
+        values: [CCTV_HEADERS, ...rows],
+      }),
+    });
+  } catch (err: any) {
+    if (err?.message?.startsWith('SHEETS_') || err?.message?.startsWith('DRIVE_') || err?.message?.startsWith('MISSING_ENV:')) {
+      throw err;
+    }
+    console.error('[SHEETS ERROR] Failed writing CCTV to Google Sheet:', err?.message || err);
+    throw new Error('SHEETS_TAB_NOT_FOUND: CCTV');
+  }
 }

@@ -7,6 +7,7 @@ export const GOOGLE_CONFIG = {
   DRIVE_COVERS_FOLDER_ID: process.env.GOOGLE_DRIVE_COVERS_FOLDER_ID || '1b1T6joDt1c9wxhexUc31n1YI_DdebzOm',
   DRIVE_MEDIA_FOLDER_ID: process.env.GOOGLE_DRIVE_MEDIA_FOLDER_ID || '1kaDYyeycE7jQkOjIV9xHQJaTCLWpXzqT',
   REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'https://amitdied.vercel.app/api/auth/google/callback',
+  REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN || '',
   SCOPES: [
     'openid',
     'https://www.googleapis.com/auth/userinfo.email',
