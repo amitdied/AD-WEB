@@ -1,347 +1,257 @@
-"use client";
-import { beats as hardcodedBeats } from "@/lib/data";
-import { useAudio } from "@/lib/AudioContext";
-import {
-  Play,
-  Pause,
-  ShoppingCart,
-  Search,
-  Filter,
-  Activity,
-} from "lucide-react";
-import Image from "next/image";
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { LicenseModal } from "./LicenseModal";
+'use client';
+
+import React, { useState, useMemo } from 'react';
+import { Play, Pause, Search, Filter, ShoppingBag, Music, Disc3, Sparkles, SlidersHorizontal } from 'lucide-react';
+import { INITIAL_BEATS, Beat } from '@/lib/data';
+import { useAudio } from '@/lib/AudioContext';
+import { LicenseModal } from './LicenseModal';
 
 export function BeatStore() {
-  const { currentTrack, isPlaying, playTrack } = useAudio();
-  const [filter, setFilter] = useState("All");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [hoveredBeatId, setHoveredBeatId] = useState<string | null>(null);
-  const [allBeats, setAllBeats] = useState<any[]>(hardcodedBeats);
-  const [selectedBeatForLicense, setSelectedBeatForLicense] = useState<any | null>(null);
+  const { currentBeat, isPlaying, playBeat } = useAudio();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGenre, setSelectedGenre] = useState<string>('All');
+  const [sortBy, setSortBy] = useState<'popular' | 'newest' | 'bpm-asc' | 'bpm-desc'>('popular');
+  const [selectedBeatForLicense, setSelectedBeatForLicense] = useState<Beat | null>(null);
+  const [isLicenseModalOpen, setIsLicenseModalOpen] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/beats", { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error("Network error");
-        return res.json();
-      })
-      .then((customBeats) => {
-        if (Array.isArray(customBeats) && customBeats.length > 0) {
-          setAllBeats(customBeats);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load beats from API, using fallback", err);
-        setAllBeats(hardcodedBeats);
-      });
-  }, []);
+  const genres = ['All', 'Dark Trap', 'Rage', 'Melodic Drill', 'Ambient Phonk', 'Cinematic Trap', 'Cyberpunk'];
 
-  // Listen for global open-license-modal events (from StickyPlayer, etc.)
-  useEffect(() => {
-    const handleOpenLicense = (e: any) => {
-      if (e.detail) {
-        setSelectedBeatForLicense(e.detail);
-      }
-    };
-    window.addEventListener("open-license-modal", handleOpenLicense);
-    return () => window.removeEventListener("open-license-modal", handleOpenLicense);
-  }, []);
+  // Filter and sort beats
+  const filteredBeats = useMemo(() => {
+    return INITIAL_BEATS.filter((beat) => {
+      const matchesSearch =
+        beat.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        beat.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        beat.key.toLowerCase().includes(searchQuery.toLowerCase());
 
-  const categories = [
-    "All",
-    "Trap",
-    "Rage",
-    "Drill",
-    "Emotional",
-    "Experimental",
-  ];
+      const matchesGenre = selectedGenre === 'All' || beat.genre === selectedGenre;
 
-  const filteredBeats = allBeats.filter((b) => {
-    const matchesCategory = filter === "All" || b.genre === filter;
-    if (!matchesCategory) return false;
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    const titleMatch = b.title?.toLowerCase().includes(query);
-    const genreMatch = b.genre?.toLowerCase().includes(query);
-    const tagMatch = b.moodTags?.some((t: string) => t.toLowerCase().includes(query));
-    return titleMatch || genreMatch || tagMatch;
-  });
+      return matchesSearch && matchesGenre;
+    }).sort((a, b) => {
+      if (sortBy === 'popular') return b.plays - a.plays;
+      if (sortBy === 'newest') return new Date(b.releaseDate).getTime() - new Date(a.releaseDate).getTime();
+      if (sortBy === 'bpm-asc') return a.bpm - b.bpm;
+      if (sortBy === 'bpm-desc') return b.bpm - a.bpm;
+      return 0;
+    });
+  }, [searchQuery, selectedGenre, sortBy]);
+
+  const openLicenseModal = (beat: Beat) => {
+    setSelectedBeatForLicense(beat);
+    setIsLicenseModalOpen(true);
+  };
 
   return (
-    <section
-      id="store"
-      className="py-24 px-6 max-w-7xl mx-auto relative z-10 w-full"
-    >
-      <div className="flex flex-col xl:flex-row xl:items-end justify-between mb-16 gap-8">
-        <div className="relative">
-          {/* Glitch text effect behind heading */}
-          <div className="absolute -inset-x-4 -inset-y-2 bg-red-900/10 blur-xl -z-10 mix-blend-screen opacity-50" />
-          <h2 className="font-display text-5xl md:text-7xl font-black uppercase tracking-tighter mb-4 text-white relative flex gap-4 overflow-hidden">
-            <motion.span
-              initial={{ y: 100 }}
-              whileInView={{ y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            >
-              Available
-            </motion.span>
-            <motion.span
-              className="text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-red-900"
-              initial={{ y: 100 }}
-              whileInView={{ y: 0 }}
-              viewport={{ once: true }}
-              transition={{
-                duration: 0.6,
-                delay: 0.1,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-            >
-              Beats
-            </motion.span>
+    <section id="beats" className="py-16 md:py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Section Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4 border-b border-zinc-900 pb-6">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono uppercase text-red-500 tracking-widest font-bold mb-2">
+            <Disc3 className="w-4 h-4 animate-spin" />
+            <span>BEATS VAULT // CATALOGUE</span>
+          </div>
+          <h2 className="text-3xl md:text-5xl font-display font-black text-white uppercase tracking-tight">
+            SELECT YOUR NEXT HIT
           </h2>
-          <p className="text-zinc-500 font-mono text-sm uppercase max-w-md tracking-widest border-l-2 border-red-600 pl-4">
-            Digital licenses • Instant delivery
+          <p className="text-zinc-400 text-sm font-mono mt-1">
+            Untagged MP3, WAV and multi-track stems available with instant licensing.
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
-          <div className="relative group flex-1 xl:w-80">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-red-500 transition-colors" />
+        <div className="text-xs font-mono text-zinc-500">
+          SHOWING <span className="text-white font-bold">{filteredBeats.length}</span> PRODUCTIONS
+        </div>
+      </div>
+
+      {/* Search and Filters Bar */}
+      <div className="space-y-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          {/* Search Input */}
+          <div className="md:col-span-8 relative">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
               type="text"
+              placeholder="Search by title, tag, artist vibe, BPM, or key (e.g., 'Travis', '140', 'C# Minor')..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="SEARCH CATALOG..."
-              className="bg-zinc-950/50 backdrop-blur-md border border-zinc-800/80 rounded-none py-3 pl-12 pr-4 text-sm text-white focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600/50 w-full transition-all font-mono placeholder:text-zinc-600 uppercase tracking-widest"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-red-600 transition-colors font-mono"
             />
-            {/* Cyberpunk corner accents */}
-            <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-zinc-500 opacity-50 pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-zinc-500 opacity-50 pointer-events-none" />
           </div>
-          {searchQuery ? (
+
+          {/* Sort dropdown */}
+          <div className="md:col-span-4 flex items-center gap-2">
+            <div className="relative w-full">
+              <SlidersHorizontal className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                aria-label="Sort beats catalog"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-8 py-3 text-xs font-mono text-zinc-300 uppercase tracking-wider focus:outline-none focus:border-red-600 cursor-pointer appearance-none"
+              >
+                <option value="popular">Sort: Most Popular</option>
+                <option value="newest">Sort: Newest Drops</option>
+                <option value="bpm-asc">Sort: BPM (Low to High)</option>
+                <option value="bpm-desc">Sort: BPM (High to Low)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Genre Pill Tags */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          {genres.map((genre) => (
             <button
-              onClick={() => setSearchQuery("")}
-              className="bg-zinc-900 border border-zinc-800 rounded-none px-4 py-3 text-zinc-400 hover:text-white hover:border-red-600 transition-colors font-mono text-xs uppercase tracking-widest"
+              key={genre}
+              onClick={() => setSelectedGenre(genre)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-mono uppercase tracking-wider whitespace-nowrap transition-all ${
+                selectedGenre === genre
+                  ? 'bg-red-600 text-white font-bold border border-red-500 shadow-md shadow-red-950/40'
+                  : 'bg-zinc-950 text-zinc-400 border border-zinc-800/80 hover:border-zinc-700 hover:text-white'
+              }`}
             >
-              Clear
+              {genre}
             </button>
-          ) : (
+          ))}
+        </div>
+      </div>
+
+      {/* Beats List */}
+      <div className="space-y-2.5">
+        {filteredBeats.length === 0 ? (
+          <div className="text-center py-16 bg-zinc-950 rounded-2xl border border-zinc-900">
+            <Music className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
+            <p className="text-zinc-400 font-mono text-sm">No beats found matching your search filter.</p>
             <button
               onClick={() => {
-                const el = document.getElementById("catalog-tracks");
-                el?.scrollIntoView({ behavior: "smooth" });
+                setSearchQuery('');
+                setSelectedGenre('All');
               }}
-              className="bg-zinc-900 border border-zinc-800 rounded-none px-6 py-3 text-zinc-400 hover:text-white hover:border-red-600 transition-colors flex items-center justify-center gap-2 font-mono text-xs uppercase tracking-widest"
+              className="mt-4 px-4 py-2 rounded-lg bg-zinc-900 text-zinc-300 text-xs font-mono hover:text-white"
             >
-              <Filter className="w-4 h-4" /> Filter
+              Reset Filters
             </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex gap-2 mb-12 overflow-x-auto pb-4 scrollbar-hide snap-x">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setFilter(cat)}
-            className={`px-6 py-2.5 rounded-none text-xs font-bold uppercase tracking-[0.2em] whitespace-nowrap transition-all border snap-start relative overflow-hidden group ${
-              filter === cat
-                ? "bg-red-700/10 border-red-600 text-red-500"
-                : "bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
-            }`}
-          >
-            <span className="relative z-10">{cat}</span>
-            {filter === cat && (
-              <motion.div
-                layoutId="activeFilter"
-                className="absolute bottom-0 left-0 right-0 h-[2px] bg-red-600"
-              />
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-4">
-        {/* Header row for desktop */}
-        <div className="hidden lg:grid grid-cols-12 gap-6 px-6 py-3 border-b border-zinc-800/50 text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">
-          <div className="col-span-4">Track Identity</div>
-          <div className="col-span-2">Specs</div>
-          <div className="col-span-4">Aesthetics</div>
-          <div className="col-span-2 text-right">Acquire</div>
-        </div>
-
-        {/* Tracks List */}
-        <div className="flex flex-col gap-3">
-          {filteredBeats.map((beat) => {
-            const isActive = currentTrack?.id === beat.id;
-            const isHovered = hoveredBeatId === beat.id;
+          </div>
+        ) : (
+          filteredBeats.map((beat, idx) => {
+            const isCurrent = currentBeat?.id === beat.id;
+            const isPlayingThis = isCurrent && isPlaying;
 
             return (
-              <motion.div
+              <div
                 key={beat.id}
-                onHoverStart={() => setHoveredBeatId(beat.id)}
-                onHoverEnd={() => setHoveredBeatId(null)}
-                className={`group grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-center p-4 rounded-sm border transition-all duration-500 cursor-pointer overflow-hidden relative ${
-                  isActive
-                    ? "border-red-900/50 bg-gradient-to-r from-red-950/20 to-transparent"
-                    : "border-zinc-800/50 hover:border-zinc-700 bg-zinc-950/30"
+                className={`group flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:p-4 rounded-xl border transition-all ${
+                  isCurrent
+                    ? 'bg-zinc-900/90 border-red-700/60 shadow-lg shadow-red-950/30 ring-1 ring-red-600/30'
+                    : 'bg-zinc-950/70 border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/40'
                 }`}
-                onClick={() => {
-                  if (!isActive) playTrack(beat);
-                }}
               >
-                {/* Active scanline effect */}
-                {isActive && (
-                  <motion.div
-                    className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-red-500/50 to-transparent z-0"
-                    animate={{ top: ["0%", "100%", "0%"] }}
-                    transition={{
-                      duration: 4,
-                      repeat: Infinity,
-                      ease: "linear",
-                    }}
-                  />
-                )}
-
-                {/* Cover & Title */}
-                <div className="col-span-1 lg:col-span-4 flex items-center gap-6 relative z-10">
-                  <div
-                    className="relative w-20 h-20 overflow-hidden flex-shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      playTrack(beat);
-                    }}
+                {/* Track Details: Play + Artwork + Title */}
+                <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  {/* Play Button */}
+                  <button
+                    onClick={() => playBeat(beat)}
+                    className={`w-11 h-11 shrink-0 rounded-lg flex items-center justify-center transition-all ${
+                      isPlayingThis
+                        ? 'bg-red-600 text-white shadow-md shadow-red-600/40'
+                        : 'bg-zinc-900 text-zinc-300 group-hover:bg-red-600 group-hover:text-white group-hover:scale-105'
+                    }`}
+                    aria-label={isPlayingThis ? 'Pause' : 'Play'}
                   >
-                    {typeof beat.coverUrl === "string" &&
-                    beat.coverUrl.trim() !== "" ? (
-                      <Image
-                        src={beat.coverUrl}
-                        alt={beat.title}
-                        fill
-                        className={`object-cover transition-transform duration-700 filter ${isActive ? "scale-110 contrast-125" : "group-hover:scale-105 grayscale group-hover:grayscale-0"}`}
-                        referrerPolicy="no-referrer"
-                      />
+                    {isPlayingThis ? (
+                      <Pause className="w-5 h-5 fill-current" />
                     ) : (
-                      <div className="w-full h-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[10px] text-zinc-600 font-mono text-center p-2 leading-tight">
-                        NO IMG
-                      </div>
+                      <Play className="w-5 h-5 fill-current ml-0.5" />
                     )}
+                  </button>
 
-                    {/* Play Overlay */}
-                    <div
-                      className={`absolute inset-0 flex items-center justify-center transition-all bg-black/40 ${isActive || isHovered ? "opacity-100 backdrop-blur-[2px]" : "opacity-0"}`}
-                    >
-                      {isActive && isPlaying ? (
-                        <div className="w-10 h-10 rounded-full bg-red-600/90 flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.5)]">
-                          <Pause className="w-5 h-5 text-white" />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center hover:bg-white hover:text-black transition-colors">
-                          <Play className="w-5 h-5 ml-1" />
-                        </div>
+                  {/* Artwork */}
+                  <div className="relative w-11 h-11 shrink-0 rounded-lg overflow-hidden border border-zinc-800">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={beat.coverUrl}
+                      alt={beat.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+
+                  {/* Title & Metadata */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-display font-bold text-white text-sm sm:text-base truncate group-hover:text-red-400 transition-colors">
+                        {beat.title}
+                      </span>
+                      {beat.featured && (
+                        <span className="shrink-0 text-[9px] font-mono uppercase bg-red-950 text-red-400 px-1.5 py-0.5 rounded border border-red-800/60">
+                          HOT
+                        </span>
                       )}
                     </div>
-                  </div>
-                  <div className="min-w-0">
-                    <h3
-                      className={`font-display font-black text-xl lg:text-2xl uppercase tracking-tighter truncate transition-colors ${isActive ? "text-red-500" : "text-zinc-200 group-hover:text-white"}`}
-                    >
-                      {beat.title}
-                    </h3>
-                    <div className="text-zinc-600 font-mono text-[10px] uppercase tracking-widest mt-1 flex items-center gap-2">
+                    <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 mt-0.5">
                       <span>{beat.genre}</span>
-                      <span className="w-1 h-1 rounded-full bg-zinc-800" />
-                      <span className={isActive ? "text-red-500/80" : ""}>
-                        ID: {String(beat.id || "").padStart(4, "0")}
-                      </span>
+                      <span>•</span>
+                      <span>{beat.bpm} BPM</span>
+                      <span>•</span>
+                      <span className="text-zinc-400">{beat.key}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Specs */}
-                <div className="hidden lg:flex col-span-2 items-center gap-4 relative z-10">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-widest">
-                      Tempo
+                {/* Animated Waveform Visualizer on Active Track */}
+                <div className="hidden lg:flex items-center gap-1 px-4 w-40 h-6 shrink-0">
+                  {Array.from({ length: 16 }).map((_, barIdx) => (
+                    <span
+                      key={barIdx}
+                      className={`w-1 rounded-full bg-red-600/40 transition-all duration-150 ${
+                        isPlayingThis ? 'animate-pulse' : 'h-1.5'
+                      }`}
+                      style={{
+                        height: isPlayingThis ? `${Math.max(4, Math.sin(barIdx * 0.8 + Date.now() / 400) * 20 + 8)}px` : '4px',
+                        backgroundColor: isPlayingThis ? '#ef4444' : '#52525b',
+                      }}
+                    />
+                  ))}
+                </div>
+
+                {/* Tags / Sub-info */}
+                <div className="hidden md:flex items-center gap-1.5 px-4 shrink-0">
+                  {beat.tags.slice(0, 2).map((tag, tIdx) => (
+                    <span
+                      key={tIdx}
+                      className="text-[10px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800/80"
+                    >
+                      #{tag}
                     </span>
-                    <div className="text-zinc-300 font-mono text-sm group-hover:text-red-400 transition-colors">
-                      {beat.bpm}{" "}
-                      <span className="text-[10px] text-zinc-600">BPM</span>
-                    </div>
-                  </div>
-                  {isActive && (
-                    <div className="flex items-center gap-0.5 ml-2 h-4 w-12 opacity-80">
-                      {[...Array(6)].map((_, i) => (
-                        <motion.div
-                          key={i}
-                          className="w-1 bg-red-500 rounded-full origin-bottom"
-                          animate={{ height: ["20%", "100%", "20%"] }}
-                          transition={{
-                            duration: 0.5 + (i % 5) * 0.1,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                            delay: (i % 3) * 0.2,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  ))}
                 </div>
 
-                {/* Tags (Aesthetics) */}
-                <div className="hidden lg:block col-span-4 relative z-10">
-                  <div className="flex gap-2 flex-wrap">
-                    {beat.moodTags?.map((tag: string) => (
-                      <span
-                        key={tag}
-                        className="text-[9px] uppercase tracking-[0.2em] text-zinc-400 border border-zinc-800/50 bg-black/20 px-3 py-1 hover:border-zinc-600 hover:text-zinc-200 transition-colors cursor-default"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="col-span-1 lg:col-span-2 flex items-center justify-between lg:justify-end gap-6 w-full relative z-10">
-                  <div className="flex flex-col lg:items-end">
-                    <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-widest hidden lg:block mb-1">
-                      License
-                    </span>
-                    <div className="font-mono text-base font-bold text-zinc-200">
+                {/* Price and Licensing Action */}
+                <div className="flex items-center justify-between sm:justify-end gap-3 mt-3 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-800/60 shrink-0">
+                  <div className="sm:text-right">
+                    <span className="text-[10px] text-zinc-500 font-mono block">STARTING AT</span>
+                    <span className="text-sm font-display font-black text-white font-mono">
                       ${beat.price}
-                    </div>
-                  </div>
-                  <button
-                    className="relative overflow-hidden group/btn bg-white hover:bg-zinc-200 text-black px-6 py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] transition-all w-full lg:w-auto z-10 hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedBeatForLicense(beat);
-                    }}
-                  >
-                    {/* Hover slide effect inside button */}
-                    <div className="absolute inset-0 bg-red-600 -translate-x-full group-hover/btn:translate-x-0 transition-transform duration-300 ease-out -z-10" />
-
-                    <ShoppingCart className="w-3.5 h-3.5 group-hover/btn:text-white transition-colors duration-300" />
-                    <span className="group-hover/btn:text-white transition-colors duration-300">
-                      Acquire
                     </span>
+                  </div>
+
+                  <button
+                    onClick={() => openLicenseModal(beat)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-900 hover:bg-red-600 text-zinc-200 hover:text-white font-mono text-xs font-bold uppercase tracking-wider transition-all border border-zinc-800 hover:border-red-600"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    <span>LICENSE</span>
                   </button>
                 </div>
-              </motion.div>
+              </div>
             );
-          })}
-        </div>
+          })
+        )}
       </div>
 
-      {/* 1-Click Instagram DM & License Acquisition Modal */}
+      {/* Licensing Modal */}
       <LicenseModal
         beat={selectedBeatForLicense}
-        isOpen={!!selectedBeatForLicense}
-        onClose={() => setSelectedBeatForLicense(null)}
+        isOpen={isLicenseModalOpen}
+        onClose={() => setIsLicenseModalOpen(false)}
       />
     </section>
   );

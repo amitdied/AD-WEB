@@ -4,21 +4,18 @@ import fs from "fs";
 import path from "path";
 import { beats as defaultBeats } from "@/lib/data";
 import { revalidatePath } from "next/cache";
-import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase";
-import { cookies } from "next/headers";
+import { verifyGoogleAdmin } from "@/lib/google-auth";
+import {
+  getAllBeatsFromSheet,
+  saveBeatToSheet,
+  deleteBeatFromSheet,
+  deleteFileFromDrive,
+  ensureBeatsSheetInitialized,
+  BeatRecord,
+} from "@/lib/google-workspace";
 
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
 
-// Helper to verify admin authentication
-async function verifyAdminAuth() {
-  const cookieStore = await cookies();
-  const session = cookieStore.get("admin_session");
-  if (!session || session.value !== "authenticated") {
-    throw new Error("Unauthorized: Admin authentication required");
-  }
-}
-
-// Local JSON DB helpers
 function readDb() {
   if (!fs.existsSync(DB_PATH)) {
     return { beats: [], videos: [], deletedIds: [], _isInitialized: false };
@@ -43,155 +40,91 @@ function writeDb(data: any) {
   }
 }
 
-export async function checkSupabaseConnection() {
-  await verifyAdminAuth();
-  if (!isSupabaseConfigured || !supabaseAdmin) {
-    return {
-      connected: false,
-      message: "Supabase environment variables (NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or ANON_KEY) are not set. Running in resilient local storage mode.",
-    };
-  }
+export async function checkGoogleWorkspaceConnection() {
   try {
-    const { error } = await supabaseAdmin.from("beats").select("id").limit(1);
-    if (error) {
-      return {
-        connected: false,
-        message: `Connected to Supabase URL, but database table 'beats' returned: ${error.message}. Please run the schema SQL.`,
-      };
+    const admin = await verifyGoogleAdmin();
+    const hasClientId = Boolean(process.env.GOOGLE_CLIENT_ID);
+    const hasClientSecret = Boolean(process.env.GOOGLE_CLIENT_SECRET);
+    const hasSheetId = Boolean(process.env.GOOGLE_SHEET_ID);
+    const hasAudioFolder = Boolean(process.env.GOOGLE_DRIVE_AUDIO_FOLDER_ID);
+    const hasCoversFolder = Boolean(process.env.GOOGLE_DRIVE_COVERS_FOLDER_ID);
+
+    const missing: string[] = [];
+    if (!hasClientId) missing.push("GOOGLE_CLIENT_ID");
+    if (!hasClientSecret) missing.push("GOOGLE_CLIENT_SECRET");
+    if (!hasSheetId) missing.push("GOOGLE_SHEET_ID");
+    if (!hasAudioFolder) missing.push("GOOGLE_DRIVE_AUDIO_FOLDER_ID");
+    if (!hasCoversFolder) missing.push("GOOGLE_DRIVE_COVERS_FOLDER_ID");
+
+    let sheetStatus = "Pending setup";
+    if (hasSheetId && admin.method === "google_oauth") {
+      try {
+        await ensureBeatsSheetInitialized();
+        sheetStatus = "Connected & Active";
+      } catch (sheetErr: any) {
+        sheetStatus = `Sheet Error: ${sheetErr.message}`;
+      }
     }
+
     return {
-      connected: true,
-      message: "Supabase database and storage connected successfully!",
+      authenticated: true,
+      adminEmail: admin.email,
+      adminName: admin.name,
+      adminPicture: admin.picture,
+      loginMethod: admin.method,
+      missingVariables: missing,
+      isFullyConfigured: missing.length === 0,
+      sheetStatus,
+      message:
+        missing.length === 0
+          ? "Google Drive and Google Sheets backend are fully connected."
+          : `Connected via ${admin.method}. Missing variables: [${missing.join(", ")}].`,
     };
   } catch (err: any) {
     return {
-      connected: false,
-      message: `Failed to query Supabase: ${err?.message || "Unknown error"}`,
+      authenticated: false,
+      adminEmail: null,
+      message: err?.message || "Not authenticated",
+      missingVariables: [],
+      isFullyConfigured: false,
     };
   }
 }
 
-export async function uploadBeatMedia(formData: FormData) {
-  await verifyAdminAuth();
-  const file = formData.get("file") as File;
-  const type = (formData.get("type") as string) || "audio"; // "audio" or "cover"
-
-  if (!file) throw new Error("No file uploaded");
-
-  // Validate file types and size
-  if (type === "audio") {
-    const validAudioExtensions = [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"];
-    const ext = path.extname(file.name).toLowerCase();
-    if (!validAudioExtensions.includes(ext) && !file.type.startsWith("audio/")) {
-      throw new Error(`Invalid audio format: ${file.name}. Allowed: MP3, WAV, M4A, FLAC`);
-    }
-    const maxAudioBytes = 150 * 1024 * 1024; // 150MB
-    if (file.size > maxAudioBytes) {
-      throw new Error("Audio file exceeds maximum allowed size (150MB)");
-    }
-  } else if (type === "cover") {
-    const validImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
-    const ext = path.extname(file.name).toLowerCase();
-    if (!validImageExtensions.includes(ext) && !file.type.startsWith("image/")) {
-      throw new Error(`Invalid image format: ${file.name}. Allowed: JPG, PNG, WEBP`);
-    }
-    const maxImageBytes = 25 * 1024 * 1024; // 25MB
-    if (file.size > maxImageBytes) {
-      throw new Error("Cover image exceeds maximum allowed size (25MB)");
-    }
-  }
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const uniqueFileName = `${Date.now()}-${safeName}`;
-
-  // 1. Try Supabase Storage if configured
-  if (isSupabaseConfigured && supabaseAdmin) {
-    const bucketName = type === "audio" ? "audio-files" : "cover-images";
-    try {
-      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-        .from(bucketName)
-        .upload(uniqueFileName, buffer, {
-          contentType: file.type || (type === "audio" ? "audio/mpeg" : "image/jpeg"),
-          upsert: true,
-        });
-
-      if (!uploadError && uploadData) {
-        const { data: publicUrlData } = supabaseAdmin.storage
-          .from(bucketName)
-          .getPublicUrl(uniqueFileName);
-
-        if (publicUrlData?.publicUrl) {
-          return {
-            url: publicUrlData.publicUrl,
-            storage: "supabase",
-            fileName: uniqueFileName,
-          };
-        }
-      } else if (uploadError) {
-        console.warn(`Supabase Storage upload to '${bucketName}' failed:`, uploadError.message);
-      }
-    } catch (sErr) {
-      console.warn("Supabase Storage upload threw exception, falling back to local:", sErr);
-    }
-  }
-
-  // 2. Fallback to local uploads directory in public/uploads
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-  const filePath = path.join(uploadDir, uniqueFileName);
-  fs.writeFileSync(filePath, buffer);
-
-  return {
-    url: `/uploads/${uniqueFileName}`,
-    storage: "local",
-    fileName: uniqueFileName,
-  };
-}
-
-// Fetch all beats for the Admin Beats Manager (includes drafts and unpublished)
 export async function getAllAdminBeats() {
-  await verifyAdminAuth();
+  await verifyGoogleAdmin();
 
-  // Try Supabase first
-  if (isSupabaseConfigured && supabaseAdmin) {
-    try {
-      const { data, error } = await supabaseAdmin
-        .from("beats")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (!error && Array.isArray(data)) {
-        return data.map((b: any) => ({
-          id: b.id,
-          title: b.title,
-          producer: b.producer || "AMITDIED",
-          bpm: Number(b.bpm) || 120,
-          key: b.key || "",
-          genre: b.genre || "Trap",
-          moodTags: Array.isArray(b.mood_tags)
-            ? b.mood_tags
-            : (b.moodTags || (b.mood ? [b.mood] : ["Dark"])),
-          price: Number(b.price) || 29.99,
-          coverUrl: b.cover_url || b.coverUrl || "/placeholder-cover.png",
-          audioUrl: b.audio_url || b.audioUrl || "",
-          buyLink: b.buy_link || b.buyLink || "",
-          description: b.description || "",
-          isPublished: b.is_published ?? true,
-          isFeatured: b.is_featured ?? false,
-          createdAt: b.created_at || new Date().toISOString(),
-          updatedAt: b.updated_at,
-        }));
-      }
-    } catch (err) {
-      console.warn("Failed to load admin beats from Supabase:", err);
+  // Try Google Sheets first
+  try {
+    const sheetBeats = await getAllBeatsFromSheet();
+    if (Array.isArray(sheetBeats) && sheetBeats.length > 0) {
+      return sheetBeats.map((b) => ({
+        id: b.id,
+        title: b.title,
+        slug: b.slug,
+        bpm: b.bpm,
+        genre: b.genre,
+        mood: b.mood,
+        moodTags: b.tags.length > 0 ? b.tags : [b.mood],
+        tags: b.tags,
+        price: b.price,
+        currency: b.currency,
+        coverUrl: b.coverFileId ? `/api/media/${b.coverFileId}` : "/placeholder-cover.png",
+        audioUrl: b.audioFileId ? `/api/media/${b.audioFileId}` : "",
+        audioFileId: b.audioFileId,
+        coverFileId: b.coverFileId,
+        description: b.description,
+        isPublished: b.isPublished,
+        isFeatured: b.isFeatured,
+        createdAt: b.createdAt,
+        updatedAt: b.updatedAt,
+      }));
     }
+  } catch (err) {
+    console.warn("Failed to load admin beats from Google Sheets:", err);
   }
 
-  // Local DB fallback
+  // Local fallback
   const db = readDb();
   if (Array.isArray(db.beats) && db.beats.length > 0) {
     return db.beats.map((b: any) => ({
@@ -208,111 +141,18 @@ export async function getAllAdminBeats() {
   }));
 }
 
-export async function saveBeat(beatData: any) {
-  await verifyAdminAuth();
-
-  const id = beatData.id || `beat-${Date.now()}`;
-  const record = {
-    id,
-    title: (beatData.title || "Untitled Beat").trim(),
-    producer: (beatData.producer || "AMITDIED").trim(),
-    bpm: Number(beatData.bpm) || 120,
-    key: (beatData.key || "").trim(),
-    genre: (beatData.genre || "Trap").trim(),
-    mood_tags: Array.isArray(beatData.moodTags)
-      ? beatData.moodTags
-      : typeof beatData.moodTags === "string"
-      ? beatData.moodTags.split(",").map((s: string) => s.trim()).filter(Boolean)
-      : ["Dark"],
-    price: Number(beatData.price) || 29.99,
-    cover_url: beatData.coverUrl || "/placeholder-cover.png",
-    audio_url: beatData.audioUrl || "",
-    buy_link: beatData.buyLink || "",
-    description: beatData.description || "",
-    is_published: beatData.isPublished !== false,
-    is_featured: Boolean(beatData.isFeatured),
-    updated_at: new Date().toISOString(),
-  };
-
-  let savedInSupabase = false;
-
-  // 1. Try Supabase
-  if (isSupabaseConfigured && supabaseAdmin) {
-    try {
-      const { error } = await supabaseAdmin
-        .from("beats")
-        .upsert(
-          {
-            ...record,
-            created_at: beatData.createdAt || new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
-
-      if (!error) {
-        savedInSupabase = true;
-      } else {
-        console.warn("Supabase upsert returned error:", error.message);
-      }
-    } catch (sErr) {
-      console.warn("Supabase upsert threw error:", sErr);
-    }
-  }
-
-  // 2. Also keep local data/db.json in sync so both environments never lose beats
-  const db = readDb();
-  if (!db.beats) db.beats = [];
-  const existingIdx = db.beats.findIndex((b: any) => b.id === id);
-
-  const localFormat = {
-    id,
-    title: record.title,
-    producer: record.producer,
-    bpm: record.bpm,
-    key: record.key,
-    genre: record.genre,
-    moodTags: record.mood_tags,
-    price: record.price,
-    coverUrl: record.cover_url,
-    audioUrl: record.audio_url,
-    buyLink: record.buy_link,
-    description: record.description,
-    isPublished: record.is_published,
-    isFeatured: record.is_featured,
-    createdAt: beatData.createdAt || new Date().toISOString(),
-    updatedAt: record.updated_at,
-  };
-
-  if (existingIdx >= 0) {
-    db.beats[existingIdx] = { ...db.beats[existingIdx], ...localFormat };
-  } else {
-    db.beats.unshift(localFormat);
-  }
-
-  writeDb(db);
-  revalidatePath("/");
-  revalidatePath("/admin/beats");
-  revalidatePath("/api/beats");
-
-  return {
-    success: true,
-    beat: localFormat,
-    savedInSupabase,
-  };
-}
-
 export async function togglePublishBeat(id: string, isPublished: boolean) {
-  await verifyAdminAuth();
+  await verifyGoogleAdmin();
 
-  if (isSupabaseConfigured && supabaseAdmin) {
-    try {
-      await supabaseAdmin
-        .from("beats")
-        .update({ is_published: isPublished, updated_at: new Date().toISOString() })
-        .eq("id", id);
-    } catch (e) {
-      console.warn("Failed to toggle publish in Supabase:", e);
+  try {
+    const sheetBeats = await getAllBeatsFromSheet();
+    const target = sheetBeats.find((b) => b.id === id);
+    if (target) {
+      target.isPublished = isPublished;
+      await saveBeatToSheet(target);
     }
+  } catch (err) {
+    console.warn("Failed to toggle publish in Sheets:", err);
   }
 
   const db = readDb();
@@ -331,17 +171,17 @@ export async function togglePublishBeat(id: string, isPublished: boolean) {
 }
 
 export async function toggleFeaturedBeat(id: string, isFeatured: boolean) {
-  await verifyAdminAuth();
+  await verifyGoogleAdmin();
 
-  if (isSupabaseConfigured && supabaseAdmin) {
-    try {
-      await supabaseAdmin
-        .from("beats")
-        .update({ is_featured: isFeatured, updated_at: new Date().toISOString() })
-        .eq("id", id);
-    } catch (e) {
-      console.warn("Failed to toggle featured in Supabase:", e);
+  try {
+    const sheetBeats = await getAllBeatsFromSheet();
+    const target = sheetBeats.find((b) => b.id === id);
+    if (target) {
+      target.isFeatured = isFeatured;
+      await saveBeatToSheet(target);
     }
+  } catch (err) {
+    console.warn("Failed to toggle featured in Sheets:", err);
   }
 
   const db = readDb();
@@ -360,16 +200,26 @@ export async function toggleFeaturedBeat(id: string, isFeatured: boolean) {
 }
 
 export async function deleteBeat(id: string) {
-  await verifyAdminAuth();
+  await verifyGoogleAdmin();
 
-  if (isSupabaseConfigured && supabaseAdmin) {
-    try {
-      await supabaseAdmin.from("beats").delete().eq("id", id);
-    } catch (e) {
-      console.warn("Failed to delete beat from Supabase:", e);
+  // 1. Delete from Google Drive and Google Sheets
+  try {
+    const sheetBeats = await getAllBeatsFromSheet();
+    const target = sheetBeats.find((b) => b.id === id);
+    if (target) {
+      if (target.audioFileId) {
+        await deleteFileFromDrive(target.audioFileId);
+      }
+      if (target.coverFileId) {
+        await deleteFileFromDrive(target.coverFileId);
+      }
+      await deleteBeatFromSheet(id);
     }
+  } catch (err) {
+    console.warn("Failed to delete beat from Google Workspace:", err);
   }
 
+  // 2. Also clean local db fallback
   const db = readDb();
   if (!db.deletedIds) db.deletedIds = [];
   if (!db.deletedIds.includes(id)) {

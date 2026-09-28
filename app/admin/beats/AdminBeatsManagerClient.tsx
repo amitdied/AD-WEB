@@ -27,29 +27,33 @@ import {
   X,
   Play,
   Pause,
+  LogIn,
+  LogOut,
+  FolderSync,
 } from "lucide-react";
 import {
   getAllAdminBeats,
-  saveBeat,
-  uploadBeatMedia,
   togglePublishBeat,
   toggleFeaturedBeat,
   deleteBeat,
-  checkSupabaseConnection,
+  checkGoogleWorkspaceConnection,
 } from "./actions";
 
 interface BeatItem {
   id: string;
   title: string;
-  producer?: string;
+  slug?: string;
   bpm: number;
-  key?: string;
   genre: string;
+  mood?: string;
   moodTags: string[];
+  tags?: string[];
   price: number;
+  currency?: string;
   coverUrl: string;
   audioUrl: string;
-  buyLink?: string;
+  audioFileId?: string;
+  coverFileId?: string;
   description?: string;
   isPublished?: boolean;
   isFeatured?: boolean;
@@ -59,12 +63,19 @@ interface BeatItem {
 export function AdminBeatsManagerClient() {
   const [beats, setBeats] = useState<BeatItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [supabaseStatus, setSupabaseStatus] = useState<{
-    connected: boolean;
+  const [workspaceStatus, setWorkspaceStatus] = useState<{
+    authenticated: boolean;
+    adminEmail: string | null;
+    adminName?: string;
+    adminPicture?: string | null;
+    loginMethod?: string;
+    missingVariables?: string[];
+    isFullyConfigured?: boolean;
+    sheetStatus?: string;
     message: string;
   } | null>(null);
 
-  // Audio playback test inside admin
+  // Audio test player inside admin
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -72,31 +83,29 @@ export function AdminBeatsManagerClient() {
   const [editingBeat, setEditingBeat] = useState<BeatItem | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
 
-  // Form inputs
+  // Metadata states
   const [title, setTitle] = useState("");
-  const [producer, setProducer] = useState("AMITDIED");
   const [bpm, setBpm] = useState<number>(140);
   const [genre, setGenre] = useState("Trap");
-  const [keyScale, setKeyScale] = useState("");
+  const [mood, setMood] = useState("Dark");
   const [price, setPrice] = useState<number>(29.99);
+  const [currency, setCurrency] = useState("INR");
   const [tagsInput, setTagsInput] = useState("Dark, Hard, Heavy");
   const [description, setDescription] = useState("");
-  const [buyLink, setBuyLink] = useState("");
   const [isPublished, setIsPublished] = useState(true);
   const [isFeatured, setIsFeatured] = useState(false);
 
-  // Media files & uploads
-  const [audioUrl, setAudioUrl] = useState("");
-  const [coverUrl, setCoverUrl] = useState("");
-  const [audioFileName, setAudioFileName] = useState("");
-  const [coverFileName, setCoverFileName] = useState("");
+  // Files & IDs
+  const [beatId, setBeatId] = useState<string>("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [existingAudioFileId, setExistingAudioFileId] = useState("");
+  const [existingCoverFileId, setExistingCoverFileId] = useState("");
 
-  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
-  const [audioUploadProgress, setAudioUploadProgress] = useState(0);
-  const [isUploadingCover, setIsUploadingCover] = useState(false);
-  const [coverUploadProgress, setCoverUploadProgress] = useState(0);
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Upload state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatusText, setUploadStatusText] = useState("");
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -111,10 +120,10 @@ export function AdminBeatsManagerClient() {
     try {
       const [beatsData, conn] = await Promise.all([
         getAllAdminBeats(),
-        checkSupabaseConnection(),
+        checkGoogleWorkspaceConnection(),
       ]);
       setBeats(beatsData || []);
-      setSupabaseStatus(conn);
+      setWorkspaceStatus(conn);
     } catch (err: any) {
       console.error("Error loading beats:", err);
       setStatusMessage({
@@ -127,37 +136,37 @@ export function AdminBeatsManagerClient() {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
     (async () => {
       try {
         const [beatsData, conn] = await Promise.all([
           getAllAdminBeats(),
-          checkSupabaseConnection(),
+          checkGoogleWorkspaceConnection(),
         ]);
-        if (mounted) {
+        if (active) {
           setBeats(beatsData || []);
-          setSupabaseStatus(conn);
+          setWorkspaceStatus(conn);
         }
       } catch (err: any) {
-        if (mounted) {
+        if (active) {
           setStatusMessage({
             type: "error",
             text: err?.message || "Failed to load beats list",
           });
         }
       } finally {
-        if (mounted) setLoading(false);
+        if (active) setLoading(false);
       }
     })();
-
     return () => {
-      mounted = false;
+      active = false;
     };
   }, []);
 
+  // Audio Playback test
   const handlePlayToggle = (beat: BeatItem) => {
     if (!beat.audioUrl) {
-      alert("No audio file attached to this beat yet.");
+      alert("No audio file attached to this beat.");
       return;
     }
     if (playingId === beat.id) {
@@ -172,164 +181,142 @@ export function AdminBeatsManagerClient() {
     }
   };
 
-  const resetForm = () => {
+  const startNewBeat = () => {
+    const newId = crypto.randomUUID();
+    setBeatId(newId);
     setEditingBeat(null);
     setTitle("");
-    setProducer("AMITDIED");
     setBpm(140);
     setGenre("Trap");
-    setKeyScale("");
+    setMood("Dark");
     setPrice(29.99);
+    setCurrency("INR");
     setTagsInput("Dark, Hard, Heavy");
     setDescription("");
-    setBuyLink("");
     setIsPublished(true);
     setIsFeatured(false);
-    setAudioUrl("");
-    setCoverUrl("");
-    setAudioFileName("");
-    setCoverFileName("");
+    setAudioFile(null);
+    setCoverFile(null);
+    setExistingAudioFileId("");
+    setExistingCoverFileId("");
+    setUploadProgress(0);
+    setUploadStatusText("");
+    setIsFormOpen(true);
+  };
+
+  const resetForm = () => {
+    setEditingBeat(null);
     setIsFormOpen(false);
+    setUploadProgress(0);
+    setUploadStatusText("");
   };
 
   const handleEditClick = (beat: BeatItem) => {
     setEditingBeat(beat);
+    setBeatId(beat.id);
     setTitle(beat.title);
-    setProducer(beat.producer || "AMITDIED");
     setBpm(beat.bpm);
     setGenre(beat.genre);
-    setKeyScale(beat.key || "");
+    setMood(beat.mood || "Dark");
     setPrice(beat.price);
-    setTagsInput(Array.isArray(beat.moodTags) ? beat.moodTags.join(", ") : "");
+    setCurrency(beat.currency || "INR");
+    setTagsInput(Array.isArray(beat.tags) ? beat.tags.join(", ") : "");
     setDescription(beat.description || "");
-    setBuyLink(beat.buyLink || "");
     setIsPublished(beat.isPublished !== false);
     setIsFeatured(Boolean(beat.isFeatured));
-    setAudioUrl(beat.audioUrl || "");
-    setCoverUrl(beat.coverUrl || "");
-    setAudioFileName(beat.audioUrl ? "Existing Attached Audio" : "");
-    setCoverFileName(beat.coverUrl ? "Existing Attached Cover" : "");
+    setExistingAudioFileId(beat.audioFileId || "");
+    setExistingCoverFileId(beat.coverFileId || "");
+    setAudioFile(null);
+    setCoverFile(null);
     setIsFormOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Direct Audio Upload handler
-  const handleAudioUpload = async (file: File) => {
-    setIsUploadingAudio(true);
-    setAudioUploadProgress(20);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", "audio");
-
-      setAudioUploadProgress(50);
-      const res = await uploadBeatMedia(formData);
-      setAudioUploadProgress(100);
-
-      setAudioUrl(res.url);
-      setAudioFileName(file.name);
-      setStatusMessage({
-        type: "success",
-        text: `Audio "${file.name}" uploaded successfully (${res.storage === "supabase" ? "Supabase Storage" : "Local Storage"})!`,
-      });
-    } catch (err: any) {
-      console.error("Audio upload error:", err);
-      setStatusMessage({
-        type: "error",
-        text: err?.message || "Failed to upload audio file",
-      });
-    } finally {
-      setIsUploadingAudio(false);
-      setTimeout(() => setAudioUploadProgress(0), 1000);
-    }
-  };
-
-  // Direct Cover Upload handler
-  const handleCoverUpload = async (file: File) => {
-    setIsUploadingCover(true);
-    setCoverUploadProgress(20);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", "cover");
-
-      setCoverUploadProgress(50);
-      const res = await uploadBeatMedia(formData);
-      setCoverUploadProgress(100);
-
-      setCoverUrl(res.url);
-      setCoverFileName(file.name);
-      setStatusMessage({
-        type: "success",
-        text: `Cover artwork uploaded successfully (${res.storage === "supabase" ? "Supabase Storage" : "Local Storage"})!`,
-      });
-    } catch (err: any) {
-      console.error("Cover upload error:", err);
-      setStatusMessage({
-        type: "error",
-        text: err?.message || "Failed to upload cover image",
-      });
-    } finally {
-      setIsUploadingCover(false);
-      setTimeout(() => setCoverUploadProgress(0), 1000);
-    }
-  };
-
-  // Submit / Publish Beat
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Dedicated upload through /api/admin/beats/upload
+  const handlePublishBeat = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!title.trim()) {
-      setStatusMessage({ type: "error", text: "Please enter a beat title." });
+      setStatusMessage({ type: "error", text: "Beat title is required." });
       return;
     }
 
-    setIsSubmitting(true);
+    if (!editingBeat && !audioFile && !existingAudioFileId) {
+      setStatusMessage({ type: "error", text: "Please attach an MP3 or WAV audio track." });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(10);
+    setUploadStatusText("Uploading... 10%");
     setStatusMessage(null);
 
+    const formData = new FormData();
+    formData.append("id", beatId || crypto.randomUUID());
+    formData.append("title", title.trim());
+    formData.append("bpm", String(bpm));
+    formData.append("genre", genre.trim());
+    formData.append("mood", mood.trim());
+    formData.append("price", String(price));
+    formData.append("currency", currency.trim());
+    formData.append("description", description.trim());
+    formData.append("tags", tagsInput);
+    formData.append("isPublished", String(isPublished));
+    formData.append("isFeatured", String(isFeatured));
+
+    if (existingAudioFileId) formData.append("existingAudioFileId", existingAudioFileId);
+    if (existingCoverFileId) formData.append("existingCoverFileId", existingCoverFileId);
+
+    if (audioFile) {
+      formData.append("audioFile", audioFile);
+    }
+    if (coverFile) {
+      formData.append("coverFile", coverFile);
+    }
+
     try {
-      const tagsArray = tagsInput
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
+      setUploadProgress(35);
+      setUploadStatusText("Uploading to Google Drive... 35%");
 
-      const beatPayload = {
-        id: editingBeat ? editingBeat.id : `beat-${Date.now()}`,
-        title: title.trim(),
-        producer: producer.trim() || "AMITDIED",
-        bpm: Number(bpm) || 120,
-        key: keyScale.trim(),
-        genre: genre.trim(),
-        moodTags: tagsArray.length > 0 ? tagsArray : ["Dark"],
-        price: Number(price) || 29.99,
-        coverUrl: coverUrl || "/placeholder-cover.png",
-        audioUrl: audioUrl || "",
-        buyLink: buyLink.trim(),
-        description: description.trim(),
-        isPublished: isPublished,
-        isFeatured: isFeatured,
-        createdAt: editingBeat?.createdAt,
-      };
+      // Simulate step increments while server streams to Google Drive
+      const progressTimer = setInterval(() => {
+        setUploadProgress((p) => {
+          if (p < 85) return p + 15;
+          return p;
+        });
+      }, 700);
 
-      const result = await saveBeat(beatPayload);
+      const res = await fetch("/api/admin/beats/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      clearInterval(progressTimer);
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to upload beat to Google Workspace.");
+      }
+
+      setUploadProgress(100);
+      setUploadStatusText("Upload successful!");
 
       setStatusMessage({
         type: "success",
-        text: editingBeat
-          ? `Beat "${beatPayload.title}" updated successfully!`
-          : `Beat "${beatPayload.title}" published live directly to store! ${result.savedInSupabase ? "(Supabase Synced)" : "(Local Resilient Storage)"}`,
+        text: `Beat "${title}" saved to Google Drive and Google Sheets! Reflected live without redeployment.`,
       });
 
       resetForm();
       await loadData();
     } catch (err: any) {
-      console.error("Save beat error:", err);
+      console.error("Upload error:", err);
       setStatusMessage({
         type: "error",
-        text: err?.message || "Failed to save beat",
+        text: err?.message || "Failed to process beat upload.",
       });
     } finally {
-      setIsSubmitting(false);
+      setIsUploading(false);
     }
   };
 
@@ -358,7 +345,7 @@ export function AdminBeatsManagerClient() {
   };
 
   const handleDelete = async (beat: BeatItem) => {
-    if (!confirm(`Are you sure you want to permanently delete beat "${beat.title}"?`)) {
+    if (!confirm(`Are you sure you want to permanently delete beat "${beat.title}" from Google Drive & Sheets?`)) {
       return;
     }
     try {
@@ -369,11 +356,19 @@ export function AdminBeatsManagerClient() {
       }
       setStatusMessage({
         type: "success",
-        text: `Beat "${beat.title}" deleted successfully.`,
+        text: `Beat "${beat.title}" deleted from Google Drive & Google Sheets.`,
       });
     } catch (err: any) {
       alert("Error deleting beat: " + err.message);
     }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   return (
@@ -385,7 +380,7 @@ export function AdminBeatsManagerClient() {
         className="hidden"
       />
 
-      {/* Top Bar */}
+      {/* Top Navigation */}
       <header className="sticky top-0 z-40 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/80 px-4 sm:px-8 py-3.5 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
@@ -399,15 +394,35 @@ export function AdminBeatsManagerClient() {
           <div className="flex items-center gap-2">
             <h1 className="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
-              DIRECT BEAT UPLOADER
+              AMITDIED BEAT BACKEND
             </h1>
-            <span className="text-[10px] uppercase font-mono tracking-widest px-2 py-0.5 rounded bg-red-950/60 border border-red-800 text-red-400">
-              Live DB
+            <span className="text-[10px] uppercase font-mono tracking-widest px-2 py-0.5 rounded bg-blue-950/60 border border-blue-800 text-blue-400">
+              Google Drive &amp; Sheets
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          {workspaceStatus?.loginMethod === "google_oauth" ? (
+            <form action="/api/admin/auth/google/logout" method="POST">
+              <button
+                type="submit"
+                className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-red-400 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Google Logout</span>
+              </button>
+            </form>
+          ) : (
+            <a
+              href="/api/admin/auth/google/login"
+              className="flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-lg font-semibold transition-colors"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Connect Google Account</span>
+            </a>
+          )}
+
           <Link
             href="/#beats"
             target="_blank"
@@ -417,12 +432,13 @@ export function AdminBeatsManagerClient() {
             <span>Live Store</span>
             <ExternalLink className="w-3 h-3 text-red-500" />
           </Link>
+
           <button
             onClick={() => {
               if (isFormOpen) {
                 resetForm();
               } else {
-                setIsFormOpen(true);
+                startNewBeat();
               }
             }}
             className="flex items-center gap-2 px-3.5 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-transform active:scale-95 shadow-[0_0_15px_rgba(239,68,68,0.3)]"
@@ -470,26 +486,24 @@ export function AdminBeatsManagerClient() {
           </div>
         )}
 
-        {/* Database & Storage Status Banner */}
-        <div className="mb-6 p-3.5 bg-zinc-950 rounded-xl border border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        {/* Google Workspace Connection Banner */}
+        <div className="mb-6 p-4 bg-zinc-950 rounded-xl border border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-3">
             <div
               className={`w-3 h-3 rounded-full flex-shrink-0 ${
-                supabaseStatus?.connected
+                workspaceStatus?.loginMethod === "google_oauth"
                   ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]"
-                  : "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                  : "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
               }`}
             />
             <div>
               <span className="font-semibold text-zinc-200">
-                {supabaseStatus?.connected
-                  ? "Active Storage: Supabase Cloud (Storage + Database)"
-                  : "Active Storage: Resilient Server Storage (Local DB & /public/uploads)"}
+                {workspaceStatus?.loginMethod === "google_oauth"
+                  ? `Google OAuth Active: ${workspaceStatus.adminEmail}`
+                  : `Admin Session: ${workspaceStatus?.adminEmail || "Authenticated"}`}
               </span>
               <p className="text-zinc-500 mt-0.5">
-                {supabaseStatus?.connected
-                  ? "Beats published here are saved in Supabase and instantly visible on the live website without rebuilding."
-                  : "Configured to instantly serve beats to your live store. Connect NEXT_PUBLIC_SUPABASE_URL anytime for seamless cloud migration."}
+                {workspaceStatus?.message}
               </p>
             </div>
           </div>
@@ -501,7 +515,7 @@ export function AdminBeatsManagerClient() {
             <RefreshCw
               className={`w-3 h-3 ${loading ? "animate-spin text-red-500" : ""}`}
             />
-            <span>Refresh Data</span>
+            <span>Refresh Backend</span>
           </button>
         </div>
 
@@ -512,10 +526,10 @@ export function AdminBeatsManagerClient() {
               <div>
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-red-500" />
-                  {editingBeat ? `Edit Beat: ${editingBeat.title}` : "Upload & Publish New Beat"}
+                  {editingBeat ? `Edit Beat: ${editingBeat.title}` : "Upload Beat to Google Drive"}
                 </h2>
                 <p className="text-xs text-zinc-400 mt-1">
-                  Upload MP3/WAV, add artwork, fill in BPM &amp; price, and hit Publish to immediately show on your website.
+                  Audio &amp; covers will be saved into your configured Google Drive folders. Beat details are stored in your Google Sheets database.
                 </p>
               </div>
               <button
@@ -526,8 +540,8 @@ export function AdminBeatsManagerClient() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Media Uploads Grid */}
+            <form onSubmit={handlePublishBeat} className="space-y-6">
+              {/* Media Dropzones */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Audio Upload Dropzone */}
                 <div className="space-y-2">
@@ -536,9 +550,9 @@ export function AdminBeatsManagerClient() {
                       <Music className="w-4 h-4 text-red-500" />
                       Audio Track (MP3 / WAV) *
                     </span>
-                    {audioUrl && (
+                    {(audioFile || existingAudioFileId) && (
                       <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" /> Attached
+                        <CheckCircle2 className="w-3 h-3" /> Ready
                       </span>
                     )}
                   </label>
@@ -548,11 +562,11 @@ export function AdminBeatsManagerClient() {
                     onDrop={(e) => {
                       e.preventDefault();
                       const file = e.dataTransfer.files[0];
-                      if (file) handleAudioUpload(file);
+                      if (file) setAudioFile(file);
                     }}
                     onClick={() => audioInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-                      audioUrl
+                      audioFile || existingAudioFileId
                         ? "border-emerald-600/60 bg-emerald-950/10 hover:border-emerald-500"
                         : "border-zinc-800 hover:border-red-600/60 bg-zinc-900/30 hover:bg-zinc-900/60"
                     }`}
@@ -564,31 +578,29 @@ export function AdminBeatsManagerClient() {
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) handleAudioUpload(file);
+                        if (file) setAudioFile(file);
                       }}
                     />
 
-                    {isUploadingAudio ? (
-                      <div className="py-4 space-y-2">
-                        <Loader2 className="w-8 h-8 animate-spin mx-auto text-red-500" />
-                        <p className="text-xs text-zinc-300 font-medium">
-                          Uploading audio to storage... ({audioUploadProgress}%)
-                        </p>
-                        <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className="bg-red-600 h-1.5 rounded-full transition-all duration-300"
-                            style={{ width: `${audioUploadProgress}%` }}
-                          />
-                        </div>
-                      </div>
-                    ) : audioUrl ? (
+                    {audioFile ? (
                       <div className="py-2 space-y-2">
                         <FileAudio className="w-10 h-10 mx-auto text-emerald-400" />
                         <p className="text-sm font-semibold text-white truncate max-w-xs mx-auto">
-                          {audioFileName || "Audio track uploaded"}
+                          {audioFile.name}
                         </p>
-                        <p className="text-xs text-zinc-400 truncate max-w-sm mx-auto font-mono">
-                          {audioUrl}
+                        <p className="text-xs text-zinc-400 font-mono">
+                          {formatFileSize(audioFile.size)} • Ready to upload to Google Drive
+                        </p>
+                        <span className="inline-block text-[11px] text-zinc-400 hover:text-white underline">
+                          Click to select a different audio file
+                        </span>
+                      </div>
+                    ) : existingAudioFileId ? (
+                      <div className="py-2 space-y-2">
+                        <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-400" />
+                        <p className="text-sm font-semibold text-white">Audio Attached</p>
+                        <p className="text-xs text-zinc-400 font-mono truncate max-w-sm mx-auto">
+                          Google Drive File ID: {existingAudioFileId}
                         </p>
                         <span className="inline-block text-[11px] text-zinc-400 hover:text-white underline">
                           Click to replace audio file
@@ -598,25 +610,13 @@ export function AdminBeatsManagerClient() {
                       <div className="py-4 space-y-2">
                         <Upload className="w-8 h-8 mx-auto text-zinc-500 group-hover:text-red-500 transition-colors" />
                         <p className="text-xs font-semibold text-zinc-200">
-                          Drag &amp; drop your beat file here, or browse
+                          Drag &amp; drop MP3/WAV here, or click to browse
                         </p>
                         <p className="text-[11px] text-zinc-500 font-mono">
-                          Supports MP3 &amp; WAV (up to 150MB)
+                          Destination: AMITDIED BEATS/AUDIO/
                         </p>
                       </div>
                     )}
-                  </div>
-
-                  {/* Manual Audio URL input */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[10px] text-zinc-500 font-mono uppercase">Or direct URL:</span>
-                    <input
-                      type="text"
-                      value={audioUrl}
-                      onChange={(e) => setAudioUrl(e.target.value)}
-                      placeholder="https://.../beat.mp3"
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1 text-xs text-zinc-300 focus:outline-none focus:border-red-600"
-                    />
                   </div>
                 </div>
 
@@ -625,11 +625,11 @@ export function AdminBeatsManagerClient() {
                   <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <ImageIcon className="w-4 h-4 text-red-500" />
-                      Cover Artwork *
+                      Cover Artwork (PNG / JPG / WEBP)
                     </span>
-                    {coverUrl && (
+                    {(coverFile || existingCoverFileId) && (
                       <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" /> Selected
+                        <CheckCircle2 className="w-3 h-3" /> Ready
                       </span>
                     )}
                   </label>
@@ -639,11 +639,11 @@ export function AdminBeatsManagerClient() {
                     onDrop={(e) => {
                       e.preventDefault();
                       const file = e.dataTransfer.files[0];
-                      if (file) handleCoverUpload(file);
+                      if (file) setCoverFile(file);
                     }}
                     onClick={() => coverInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-                      coverUrl
+                      coverFile || existingCoverFileId
                         ? "border-emerald-600/60 bg-emerald-950/10 hover:border-emerald-500"
                         : "border-zinc-800 hover:border-red-600/60 bg-zinc-900/30 hover:bg-zinc-900/60"
                     }`}
@@ -655,28 +655,29 @@ export function AdminBeatsManagerClient() {
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) handleCoverUpload(file);
+                        if (file) setCoverFile(file);
                       }}
                     />
 
-                    {isUploadingCover ? (
-                      <div className="py-4 space-y-2">
-                        <Loader2 className="w-8 h-8 animate-spin mx-auto text-red-500" />
-                        <p className="text-xs text-zinc-300 font-medium">
-                          Uploading image to storage... ({coverUploadProgress}%)
-                        </p>
-                        <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className="bg-red-600 h-1.5 rounded-full transition-all duration-300"
-                            style={{ width: `${coverUploadProgress}%` }}
-                          />
+                    {coverFile ? (
+                      <div className="flex items-center justify-center gap-4 py-1">
+                        <div className="text-left">
+                          <p className="text-sm font-semibold text-white truncate max-w-[200px]">
+                            {coverFile.name}
+                          </p>
+                          <p className="text-xs text-zinc-400 font-mono">
+                            {formatFileSize(coverFile.size)} • Ready to upload to Google Drive
+                          </p>
+                          <span className="text-[11px] text-zinc-400 underline">
+                            Click to replace artwork
+                          </span>
                         </div>
                       </div>
-                    ) : coverUrl ? (
+                    ) : existingCoverFileId ? (
                       <div className="flex items-center justify-center gap-4 py-1">
                         <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-zinc-700 flex-shrink-0">
                           <Image
-                            src={coverUrl}
+                            src={`/api/media/${existingCoverFileId}`}
                             alt="Cover preview"
                             fill
                             className="object-cover"
@@ -684,9 +685,7 @@ export function AdminBeatsManagerClient() {
                           />
                         </div>
                         <div className="text-left">
-                          <p className="text-sm font-semibold text-white truncate max-w-[200px]">
-                            {coverFileName || "Artwork Attached"}
-                          </p>
+                          <p className="text-sm font-semibold text-white">Cover Attached</p>
                           <span className="text-[11px] text-zinc-400 underline">
                             Click to replace artwork
                           </span>
@@ -696,28 +695,35 @@ export function AdminBeatsManagerClient() {
                       <div className="py-4 space-y-2">
                         <ImageIcon className="w-8 h-8 mx-auto text-zinc-500 group-hover:text-red-500 transition-colors" />
                         <p className="text-xs font-semibold text-zinc-200">
-                          Drag &amp; drop cover artwork, or browse
+                          Drag &amp; drop artwork, or browse
                         </p>
                         <p className="text-[11px] text-zinc-500 font-mono">
-                          PNG, JPG or WEBP (Square 1:1 recommended)
+                          Destination: AMITDIED BEATS/COVERS/
                         </p>
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
 
-                  {/* Manual Cover URL input */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[10px] text-zinc-500 font-mono uppercase">Or direct URL:</span>
-                    <input
-                      type="text"
-                      value={coverUrl}
-                      onChange={(e) => setCoverUrl(e.target.value)}
-                      placeholder="https://.../cover.jpg or /placeholder-cover.png"
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1 text-xs text-zinc-300 focus:outline-none focus:border-red-600"
+              {/* Progress Display */}
+              {isUploading && (
+                <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-zinc-200 flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-red-500" />
+                      {uploadStatusText || "Uploading..."}
+                    </span>
+                    <span className="font-mono text-zinc-400">{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-red-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Beat Metadata Form */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
@@ -736,19 +742,6 @@ export function AdminBeatsManagerClient() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1">
-                    Producer
-                  </label>
-                  <input
-                    type="text"
-                    value={producer}
-                    onChange={(e) => setProducer(e.target.value)}
-                    placeholder="AMITDIED"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-red-600"
-                  />
-                </div>
-
-                <div>
                   <label className="text-xs font-medium text-zinc-300 mb-1 flex items-center justify-between">
                     <span>Tempo (BPM) *</span>
                     <Hash className="w-3.5 h-3.5 text-zinc-500" />
@@ -761,19 +754,6 @@ export function AdminBeatsManagerClient() {
                     value={bpm}
                     onChange={(e) => setBpm(Number(e.target.value))}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-red-600 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1">
-                    Musical Key
-                  </label>
-                  <input
-                    type="text"
-                    value={keyScale}
-                    onChange={(e) => setKeyScale(e.target.value)}
-                    placeholder="e.g. C min, F# min, D maj"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-red-600"
                   />
                 </div>
 
@@ -799,8 +779,21 @@ export function AdminBeatsManagerClient() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1">
+                    Mood
+                  </label>
+                  <input
+                    type="text"
+                    value={mood}
+                    onChange={(e) => setMood(e.target.value)}
+                    placeholder="e.g. Dark, Aggressive, Energetic"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-red-600"
+                  />
+                </div>
+
+                <div>
                   <label className="text-xs font-medium text-zinc-300 mb-1 flex items-center justify-between">
-                    <span>License Base Price ($ USD) *</span>
+                    <span>License Base Price *</span>
                     <DollarSign className="w-3.5 h-3.5 text-zinc-500" />
                   </label>
                   <input
@@ -813,53 +806,54 @@ export function AdminBeatsManagerClient() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1">
+                    Currency
+                  </label>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-600"
+                  >
+                    <option value="INR">INR (₹)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                  </select>
+                </div>
+
                 <div className="sm:col-span-2">
                   <label className="text-xs font-medium text-zinc-300 mb-1 flex items-center gap-1.5">
                     <Tag className="w-3.5 h-3.5 text-red-500" />
-                    Mood Tags (Comma-separated)
+                    Tags (Comma-separated)
                   </label>
                   <input
                     type="text"
                     value={tagsInput}
                     onChange={(e) => setTagsInput(e.target.value)}
-                    placeholder="Dark, Aggressive, Fast, 808"
+                    placeholder="Dark, 808, Distorted, Ken Carson, Hard"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-red-600"
                   />
                 </div>
               </div>
 
-              {/* Description & Optional Buy Link */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1">
-                    Custom Buy / Instant Purchase Link (Optional)
-                  </label>
-                  <input
-                    type="url"
-                    value={buyLink}
-                    onChange={(e) => setBuyLink(e.target.value)}
-                    placeholder="e.g. Stripe, BeatStars, or Gumroad link"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2 text-xs text-white focus:outline-none focus:border-red-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1">
-                    Beat Description / Production Notes (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Hard synth lead, saturated 808s, inspired by Playboi Carti &amp; Ken Carson"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2 text-xs text-white focus:outline-none focus:border-red-600"
-                  />
-                </div>
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-300 mb-1">
+                  Description / Production Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Heavy 808s, distorted synths, master tape processed"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2 text-xs text-white focus:outline-none focus:border-red-600"
+                />
               </div>
 
               {/* Toggles & Publish CTA */}
               <div className="pt-4 border-t border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-6">
-                  {/* Publish Immediately Toggle */}
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input
                       type="checkbox"
@@ -869,11 +863,10 @@ export function AdminBeatsManagerClient() {
                     />
                     <span className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
                       <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                      Publish immediately to Live Store
+                      Publish directly to Live Store
                     </span>
                   </label>
 
-                  {/* Featured Toggle */}
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input
                       type="checkbox"
@@ -899,13 +892,13 @@ export function AdminBeatsManagerClient() {
 
                   <button
                     type="submit"
-                    disabled={isSubmitting || isUploadingAudio || isUploadingCover}
+                    disabled={isUploading}
                     className="px-6 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-transform active:scale-95 shadow-[0_0_20px_rgba(239,68,68,0.4)] flex items-center gap-2"
                   >
-                    {isSubmitting ? (
+                    {isUploading ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Saving Beat...</span>
+                        <span>Uploading to Google Drive...</span>
                       </>
                     ) : (
                       <>
@@ -931,7 +924,7 @@ export function AdminBeatsManagerClient() {
                 Live Beat Catalog ({beats.length})
               </h2>
               <p className="text-xs text-zinc-400 mt-0.5">
-                All beats active in your database. Changes here reflect immediately on your live storefront.
+                Managed in your Google Sheets database. Changes appear immediately on the storefront.
               </p>
             </div>
 
@@ -953,10 +946,10 @@ export function AdminBeatsManagerClient() {
               <Music className="w-12 h-12 text-zinc-700 mx-auto" />
               <p className="text-sm font-semibold text-zinc-300">No beats in database yet</p>
               <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                Click &quot;+ Upload Beat&quot; above to upload your first audio track and cover artwork.
+                Click &quot;+ Upload Beat&quot; above to upload your first audio track and artwork.
               </p>
               <button
-                onClick={() => setIsFormOpen(true)}
+                onClick={startNewBeat}
                 className="mt-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5"
               >
                 <Upload className="w-3.5 h-3.5" />
@@ -974,7 +967,6 @@ export function AdminBeatsManagerClient() {
                   >
                     {/* Left: Artwork + Title + Tags */}
                     <div className="flex items-center gap-4 min-w-0">
-                      {/* Play Preview button over cover */}
                       <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800 flex-shrink-0 group">
                         <Image
                           src={beat.coverUrl || "/placeholder-cover.png"}
@@ -1010,41 +1002,35 @@ export function AdminBeatsManagerClient() {
                               Featured
                             </span>
                           )}
-                          {beat.isPublished !== false ? (
-                            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400">
-                              Live
-                            </span>
-                          ) : (
-                            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-400">
-                              Unpublished (Draft)
-                            </span>
-                          )}
+                          <span
+                            className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded ${
+                              beat.isPublished !== false
+                                ? "bg-emerald-950/60 border border-emerald-800 text-emerald-400"
+                                : "bg-zinc-800 border border-zinc-700 text-zinc-400"
+                            }`}
+                          >
+                            {beat.isPublished !== false ? "Live" : "Draft"}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-2 sm:gap-4 text-xs text-zinc-400 mt-1 flex-wrap font-mono">
-                          <span>{beat.bpm} BPM</span>
+                        <div className="flex items-center gap-2 text-xs text-zinc-400 mt-1 flex-wrap">
+                          <span className="font-mono text-zinc-300">{beat.bpm} BPM</span>
                           <span>•</span>
                           <span>{beat.genre}</span>
-                          {beat.key && (
-                            <>
-                              <span>•</span>
-                              <span>{beat.key}</span>
-                            </>
-                          )}
                           <span>•</span>
-                          <span className="text-emerald-400 font-semibold font-sans">
-                            ${beat.price.toFixed(2)}
+                          <span className="font-semibold text-emerald-400 font-mono">
+                            {beat.currency === "INR" ? "₹" : "$"}{beat.price}
                           </span>
                         </div>
 
                         {beat.moodTags && beat.moodTags.length > 0 && (
-                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                            {beat.moodTags.map((tag, i) => (
+                          <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                            {beat.moodTags.slice(0, 3).map((tag, i) => (
                               <span
                                 key={i}
-                                className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800"
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400"
                               >
-                                #{tag}
+                                #{tag.replace(/^#/, "")}
                               </span>
                             ))}
                           </div>
@@ -1053,84 +1039,58 @@ export function AdminBeatsManagerClient() {
                     </div>
 
                     {/* Right: Actions */}
-                    <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto flex-wrap">
-                      {/* Play preview toggle */}
-                      {beat.audioUrl && (
-                        <button
-                          onClick={() => handlePlayToggle(beat)}
-                          className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition-colors ${
-                            isItemPlaying
-                              ? "bg-red-600/20 border-red-600 text-red-400"
-                              : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
-                          }`}
-                          title="Preview audio in browser"
-                        >
-                          {isItemPlaying ? (
-                            <>
-                              <Pause className="w-3.5 h-3.5" />
-                              <span className="text-[11px] font-mono">Pause</span>
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-3.5 h-3.5" />
-                              <span className="text-[11px] font-mono">Test Audio</span>
-                            </>
-                          )}
-                        </button>
-                      )}
-
-                      {/* Featured button */}
-                      <button
-                        onClick={() => handleToggleFeatured(beat)}
-                        className={`p-2 rounded-lg border text-xs transition-colors ${
-                          beat.isFeatured
-                            ? "bg-yellow-950/40 border-yellow-800 text-yellow-400"
-                            : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-yellow-400"
-                        }`}
-                        title={beat.isFeatured ? "Unmark featured" : "Mark as featured beat"}
-                      >
-                        <Star className={`w-4 h-4 ${beat.isFeatured ? "fill-yellow-400" : ""}`} />
-                      </button>
-
-                      {/* Publish / Unpublish button */}
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
                       <button
                         onClick={() => handleTogglePublish(beat)}
-                        className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition-colors ${
+                        className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
                           beat.isPublished !== false
-                            ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-red-400"
-                            : "bg-emerald-950/40 border-emerald-800 text-emerald-400 hover:bg-emerald-900/40"
+                            ? "bg-zinc-900 hover:bg-zinc-800 text-zinc-300"
+                            : "bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800"
                         }`}
-                        title={beat.isPublished !== false ? "Click to unpublish" : "Click to publish live"}
+                        title={beat.isPublished !== false ? "Unpublish from store" : "Publish to store"}
                       >
                         {beat.isPublished !== false ? (
                           <>
-                            <Eye className="w-4 h-4 text-emerald-400" />
-                            <span className="text-[11px] hidden md:inline">Live</span>
+                            <EyeOff className="w-3.5 h-3.5" />
+                            <span className="hidden md:inline">Unpublish</span>
                           </>
                         ) : (
                           <>
-                            <EyeOff className="w-4 h-4 text-zinc-500" />
-                            <span className="text-[11px] hidden md:inline">Draft</span>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span className="hidden md:inline">Publish</span>
                           </>
                         )}
                       </button>
 
-                      {/* Edit button */}
                       <button
-                        onClick={() => handleEditClick(beat)}
-                        className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors"
-                        title="Edit beat details & media"
+                        onClick={() => handleToggleFeatured(beat)}
+                        className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                          beat.isFeatured
+                            ? "bg-yellow-950/60 border border-yellow-800 text-yellow-400 hover:bg-yellow-900/60"
+                            : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400"
+                        }`}
+                        title="Toggle featured status"
                       >
-                        <Edit2 className="w-4 h-4" />
+                        <Star className={`w-3.5 h-3.5 ${beat.isFeatured ? "fill-yellow-400" : ""}`} />
+                        <span className="hidden md:inline">Featured</span>
                       </button>
 
-                      {/* Delete button */}
+                      <button
+                        onClick={() => handleEditClick(beat)}
+                        className="p-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-colors flex items-center gap-1 text-xs"
+                        title="Edit beat details"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span className="hidden md:inline">Edit</span>
+                      </button>
+
                       <button
                         onClick={() => handleDelete(beat)}
-                        className="p-2 rounded-lg bg-zinc-900 hover:bg-red-950/50 border border-zinc-800 hover:border-red-900 text-zinc-400 hover:text-red-400 transition-colors"
-                        title="Delete beat permanently"
+                        className="p-2 bg-zinc-900 hover:bg-red-950 text-zinc-400 hover:text-red-400 rounded-lg transition-colors flex items-center gap-1 text-xs"
+                        title="Delete beat"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden md:inline">Delete</span>
                       </button>
                     </div>
                   </div>
@@ -1140,28 +1100,27 @@ export function AdminBeatsManagerClient() {
           )}
         </div>
 
-        {/* Instructions for Supabase Credentials */}
+        {/* Setup instructions & guidance */}
         <div className="mt-10 p-6 bg-zinc-950 border border-zinc-800/80 rounded-2xl">
           <div className="flex items-start gap-4">
-            <Database className="w-6 h-6 text-red-500 flex-shrink-0 mt-1" />
+            <Database className="w-6 h-6 text-blue-500 flex-shrink-0 mt-1" />
             <div className="space-y-2 text-xs text-zinc-400">
               <h4 className="text-sm font-bold text-white">
-                How Supabase Connects Directly To Your Live Website
+                Google Workspace Backend Architecture
               </h4>
               <p>
-                1. Your app already has real persistent uploading active. When you add beats above, they are saved and visible in the Beat Store immediately without needing a code redeploy.
-              </p>
-              <p>
-                2. When you want to use Supabase cloud storage and Postgres, add these environment variables in your Vercel or cloud project settings:
+                Beats and artworks are stored in Google Drive folders, and track details are recorded in your Google Sheet (<strong>BEATS</strong>).
               </p>
               <pre className="p-3 bg-black rounded-lg border border-zinc-800 font-mono text-[11px] text-zinc-300 overflow-x-auto">
-{`NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUz..."
-SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOiJIUz..."`}
+{`GOOGLE_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="your_google_client_secret"
+GOOGLE_REDIRECT_URI="https://your-domain.com/api/admin/auth/google/callback"
+GOOGLE_DRIVE_AUDIO_FOLDER_ID="your_drive_folder_id_for_audio"
+GOOGLE_DRIVE_COVERS_FOLDER_ID="your_drive_folder_id_for_covers"
+GOOGLE_SHEET_ID="your_google_sheet_id_here"
+GOOGLE_SHEET_NAME="BEATS"
+ADMIN_GOOGLE_EMAIL="amitdied69@gmail.com"`}
               </pre>
-              <p>
-                3. The full SQL database schema with Row Level Security (RLS) is ready in <span className="font-mono text-zinc-200">supabase_schema.sql</span> in your project root.
-              </p>
             </div>
           </div>
         </div>

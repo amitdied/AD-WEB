@@ -1,14 +1,15 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { getAdminSession } from '@/lib/google/auth';
 import AdminDashboardClient from './AdminDashboardClient';
 
-export default async function AdminPage() {
-  const cookieStore = await cookies();
-  const session = cookieStore.get('admin_session');
+export const dynamic = 'force-dynamic';
 
-  if (!session || session.value !== 'authenticated') {
+export default async function AdminPage() {
+  const session = await getAdminSession();
+
+  if (!session) {
     redirect('/admin/login');
   }
 
-  return <AdminDashboardClient />;
+  return <AdminDashboardClient sessionUserEmail={session.email} isDevAuth={Boolean(session.isDevPasswordAuth)} />;
 }
