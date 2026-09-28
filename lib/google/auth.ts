@@ -1,182 +1,238 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { cookies } from 'next/headers';
-import { getGoogleConfig } from './config';
+import { GOOGLE_CONFIG } from './config';
 
-const SCOPES = [
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/spreadsheets',
-].join(' ');
+const TOKENS_PATH = path.join(process.cwd(), 'data', 'google-tokens.json');
+const SESSION_SECRET = process.env.SESSION_SECRET || GOOGLE_CONFIG.CLIENT_SECRET || 'amitdied-secure-oauth-secret-key';
+export const SESSION_COOKIE_NAME = 'admin_session';
+export const STATE_COOKIE_NAME = 'google_oauth_state';
 
-export interface AdminSession {
-  email: string;
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt: number;
-  isDevPasswordAuth?: boolean;
-}
-
-export function getGoogleOAuthURL(state?: string): string {
-  const config = getGoogleConfig();
-  if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_REDIRECT_URI) {
-    throw new Error('Google OAuth credentials (GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI) are missing.');
-  }
-
-  const params = new URLSearchParams({
-    client_id: config.GOOGLE_CLIENT_ID,
-    redirect_uri: config.GOOGLE_REDIRECT_URI,
-    response_type: 'code',
-    scope: SCOPES,
-    access_type: 'offline',
-    prompt: 'consent',
-    include_granted_scopes: 'true',
-  });
-
-  if (state) {
-    params.set('state', state);
-  }
-
-  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-}
-
-export async function exchangeCodeForTokens(code: string): Promise<{
+export interface StoredTokens {
   access_token: string;
   refresh_token?: string;
-  expires_in: number;
-  id_token?: string;
-}> {
-  const config = getGoogleConfig();
-  if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REDIRECT_URI) {
-    throw new Error('Google OAuth credentials not configured in environment.');
+  scope?: string;
+  token_type?: string;
+  expiry_date?: number;
+  user?: {
+    email: string;
+    name?: string;
+    picture?: string;
+  };
+  updated_at?: string;
+}
+
+export interface AdminSession {
+  isAuthenticated: boolean;
+  email: string;
+  name?: string;
+  picture?: string;
+  hasGoogleTokens: boolean;
+}
+
+// Ensure data directory exists
+function ensureDataDir() {
+  const dir = path.dirname(TOKENS_PATH);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
+}
+
+// Read tokens from disk
+export function getStoredTokens(): StoredTokens | null {
+  try {
+    if (!fs.existsSync(TOKENS_PATH)) return null;
+    const content = fs.readFileSync(TOKENS_PATH, 'utf8');
+    return JSON.parse(content);
+  } catch (e) {
+    console.error('Error reading stored Google tokens:', e);
+    return null;
+  }
+}
+
+// Save tokens to disk
+export function saveStoredTokens(newTokens: Partial<StoredTokens>): StoredTokens {
+  ensureDataDir();
+  const existing = getStoredTokens() || { access_token: '' };
+  const merged: StoredTokens = {
+    ...existing,
+    ...newTokens,
+    // Keep existing refresh_token if Google did not return a new one on this exchange
+    refresh_token: newTokens.refresh_token || existing.refresh_token,
+    updated_at: new Date().toISOString(),
+  };
+
+  fs.writeFileSync(TOKENS_PATH, JSON.stringify(merged, null, 2), 'utf8');
+  return merged;
+}
+
+// Generate random secure token for CSRF state
+export function generateOAuthState(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Create HMAC signature for session token
+export function signSessionPayload(payload: object): string {
+  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(data)
+    .digest('base64url');
+  return `${data}.${signature}`;
+}
+
+// Verify HMAC session token
+export function verifySessionToken(token: string): any | null {
+  try {
+    const [data, signature] = token.split('.');
+    if (!data || !signature) return null;
+
+    const expectedSig = crypto
+      .createHmac('sha256', SESSION_SECRET)
+      .update(data)
+      .digest('base64url');
+
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+      return null;
+    }
+
+    const payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+    // Check expiry (e.g. 7 days)
+    if (payload.exp && Date.now() > payload.exp) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// Exchange code for tokens
+export async function exchangeCodeForTokens(code: string, redirectUri?: string) {
+  const targetRedirectUri = redirectUri || GOOGLE_CONFIG.REDIRECT_URI;
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
-      client_id: config.GOOGLE_CLIENT_ID,
-      client_secret: config.GOOGLE_CLIENT_SECRET,
-      redirect_uri: config.GOOGLE_REDIRECT_URI,
+      client_id: GOOGLE_CONFIG.CLIENT_ID,
+      client_secret: GOOGLE_CONFIG.CLIENT_SECRET,
+      redirect_uri: targetRedirectUri,
       grant_type: 'authorization_code',
     }),
   });
 
+  const data = await res.json();
   if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Failed to exchange authorization code: ${res.status} - ${errorText}`);
+    throw new Error(data.error_description || data.error || 'Failed to exchange OAuth code');
   }
 
-  return res.json();
+  // Calculate expiry date
+  const expiryDate = data.expires_in
+    ? Date.now() + data.expires_in * 1000
+    : undefined;
+
+  return {
+    access_token: data.access_token as string,
+    refresh_token: data.refresh_token as string | undefined,
+    scope: data.scope as string | undefined,
+    token_type: data.token_type as string | undefined,
+    expiry_date: expiryDate,
+  };
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<{
-  access_token: string;
-  expires_in: number;
-}> {
-  const config = getGoogleConfig();
-  if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET) {
-    throw new Error('Google OAuth credentials not configured.');
-  }
-
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: config.GOOGLE_CLIENT_ID,
-      client_secret: config.GOOGLE_CLIENT_SECRET,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-    }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Failed to refresh token: ${res.status} - ${errorText}`);
-  }
-
-  return res.json();
-}
-
-export async function getGoogleUserInfo(accessToken: string): Promise<{
-  id: string;
-  email: string;
-  verified_email: boolean;
-  picture?: string;
-}> {
+// Fetch Google User Profile
+export async function fetchGoogleUserInfo(accessToken: string) {
   const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch Google user profile: ${res.status}`);
+    throw new Error('Failed to fetch user profile from Google');
   }
 
-  return res.json();
+  return await res.json();
 }
 
-export async function setAdminSessionCookie(session: AdminSession) {
-  const cookieStore = await cookies();
-  const sessionString = Buffer.from(JSON.stringify(session)).toString('base64');
-
-  cookieStore.set('admin_session', sessionString, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-    path: '/',
-  });
-}
-
-export async function clearAdminSessionCookie() {
-  const cookieStore = await cookies();
-  cookieStore.delete('admin_session');
-}
-
-export async function getAdminSession(): Promise<AdminSession | null> {
-  try {
-    const cookieStore = await cookies();
-    const cookie = cookieStore.get('admin_session');
-    if (!cookie?.value) return null;
-
-    // Handle legacy 'authenticated' string
-    if (cookie.value === 'authenticated') {
-      return {
-        email: process.env.ADMIN_GOOGLE_EMAIL || 'amitdied69@gmail.com',
-        accessToken: '',
-        expiresAt: Date.now() + 86400000,
-        isDevPasswordAuth: true,
-      };
-    }
-
-    const json = Buffer.from(cookie.value, 'base64').toString('utf8');
-    const session: AdminSession = JSON.parse(json);
-
-    // If session has refreshToken and accessToken expired, refresh it
-    if (session.refreshToken && session.expiresAt && Date.now() > session.expiresAt - 60000) {
-      try {
-        const refreshed = await refreshAccessToken(session.refreshToken);
-        session.accessToken = refreshed.access_token;
-        session.expiresAt = Date.now() + refreshed.expires_in * 1000;
-        await setAdminSessionCookie(session);
-      } catch (err) {
-        console.error('Failed to auto-refresh access token:', err);
-      }
-    }
-
-    return session;
-  } catch (e) {
+// Refresh access token if expired or close to expiry (within 2 minutes)
+export async function getValidAccessToken(): Promise<string | null> {
+  const stored = getStoredTokens();
+  if (!stored || !stored.access_token) {
     return null;
   }
+
+  // If not close to expiry, return existing token
+  const twoMinutes = 2 * 60 * 1000;
+  if (stored.expiry_date && stored.expiry_date - Date.now() > twoMinutes) {
+    return stored.access_token;
+  }
+
+  // If expired or about to expire and we have a refresh_token, refresh it
+  if (stored.refresh_token) {
+    try {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: GOOGLE_CONFIG.CLIENT_ID,
+          client_secret: GOOGLE_CONFIG.CLIENT_SECRET,
+          refresh_token: stored.refresh_token,
+          grant_type: 'refresh_token',
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.access_token) {
+        const updated = saveStoredTokens({
+          access_token: data.access_token,
+          expiry_date: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
+          scope: data.scope || stored.scope,
+        });
+        return updated.access_token;
+      } else {
+        console.error('Failed to refresh token:', data);
+      }
+    } catch (e) {
+      console.error('Error refreshing Google access token:', e);
+    }
+  }
+
+  return stored.access_token;
 }
 
-/**
- * Returns a valid Google Access Token for API operations:
- * checks active admin session first, then any stored refresh token.
- */
-export async function getValidGoogleAccessToken(): Promise<string | null> {
-  const session = await getAdminSession();
-  if (session?.accessToken) {
-    return session.accessToken;
+// Check admin session from Next.js server components or actions
+export async function getAdminSession(): Promise<AdminSession | null> {
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+
+  if (!sessionCookie || !sessionCookie.value) {
+    return null;
   }
-  return null;
+
+  const payload = verifySessionToken(sessionCookie.value);
+  if (!payload || !payload.email) {
+    return null;
+  }
+
+  const normalizedEmail = String(payload.email).toLowerCase().trim();
+  const allowedEmail = GOOGLE_CONFIG.ADMIN_EMAIL.toLowerCase().trim();
+
+  // Strict check: ONLY AMITDIED69@gmail.com
+  if (normalizedEmail !== allowedEmail) {
+    return null;
+  }
+
+  const tokens = getStoredTokens();
+
+  return {
+    isAuthenticated: true,
+    email: payload.email,
+    name: payload.name || 'AMITDIED',
+    picture: payload.picture || '',
+    hasGoogleTokens: Boolean(tokens?.access_token),
+  };
 }

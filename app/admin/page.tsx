@@ -7,9 +7,9 @@ export const dynamic = 'force-dynamic';
 export default async function AdminPage() {
   const session = await getAdminSession();
 
-  if (!session) {
+  if (!session || !session.isAuthenticated) {
     redirect('/admin/login');
   }
 
-  return <AdminDashboardClient sessionUserEmail={session.email} isDevAuth={Boolean(session.isDevPasswordAuth)} />;
+  return <AdminDashboardClient adminUser={session} />;
 }

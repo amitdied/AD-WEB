@@ -1,363 +1,1721 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Music,
   Video,
-  Radio,
   LogOut,
-  Settings,
-  ExternalLink,
-  ShieldCheck,
+  Plus,
+  Trash2,
+  Menu,
+  X,
   Database,
-  ArrowRight,
-  Layers,
   AlertTriangle,
+  Pencil,
+  ExternalLink,
+  Radio,
+  RefreshCw,
+  FolderCheck,
   CheckCircle2,
-} from 'lucide-react';
-import { motion } from 'motion/react';
+  HardDrive,
+  TableProperties,
+  Upload,
+} from "lucide-react";
+import Link from "next/link";
+import { logout } from "./actions";
+import {
+  checkDbStatus,
+  initializeDb,
+  getCustomBeats,
+  addBeat,
+  updateBeat,
+  deleteBeat,
+  getCustomVideos,
+  addVideo,
+  updateVideo,
+  deleteVideo,
+  uploadFile,
+  getCustomTransmissions,
+  addTransmission,
+  deleteTransmission,
+  syncWithGoogleSheet,
+  getGoogleStatus,
+} from "./data-actions";
 
-interface Props {
-  sessionUserEmail: string;
-  isDevAuth: boolean;
-}
+type Tab = "songs" | "videos" | "cctv";
 
-export default function AdminDashboardClient({ sessionUserEmail, isDevAuth }: Props) {
-  const [stats, setStats] = useState({
-    beatsCount: 0,
-    videosCount: 0,
-    cctvCount: 0,
-  });
-  const [systemReady, setSystemReady] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function AdminDashboardClient({ adminUser }: { adminUser?: any }) {
+  const [activeTab, setActiveTab] = useState<Tab>("songs");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDbInitialized, setIsDbInitialized] = useState<boolean>(true);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [isSyncingSheet, setIsSyncingSheet] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [googleStatus, setGoogleStatus] = useState<any>(null);
 
   useEffect(() => {
-    async function loadStats() {
-      try {
-        const [beatsRes, vidsRes, cctvRes, configRes] = await Promise.all([
-          fetch('/api/admin/beats').catch(() => null),
-          fetch('/api/admin/portfolio').catch(() => null),
-          fetch('/api/admin/cctv').catch(() => null),
-          fetch('/api/admin/config-status').catch(() => null),
-        ]);
+    let active = true;
+    checkDbStatus()
+      .then((isInit) => {
+        if (active) setIsDbInitialized(isInit);
+      })
+      .catch(() => {
+        if (active) setIsDbInitialized(false);
+      });
 
-        let bCount = 0;
-        let vCount = 0;
-        let cCount = 0;
+    getGoogleStatus()
+      .then((status) => {
+        if (active) setGoogleStatus(status);
+      })
+      .catch((err) => console.error("Error fetching Google status:", err));
 
-        if (beatsRes && beatsRes.ok) {
-          const bData = await beatsRes.json();
-          bCount = Array.isArray(bData)
-            ? bData.filter(
-                (b: any) =>
-                  String(b.is_published).toLowerCase() === 'true' ||
-                  String(b.is_published) === '1'
-              ).length
-            : 0;
-        }
-
-        if (vidsRes && vidsRes.ok) {
-          const vData = await vidsRes.json();
-          vCount = Array.isArray(vData)
-            ? vData.filter(
-                (v: any) =>
-                  String(v.is_published).toLowerCase() === 'true' ||
-                  String(v.is_published) === '1'
-              ).length
-            : 0;
-        }
-
-        if (cctvRes && cctvRes.ok) {
-          const cData = await cctvRes.json();
-          cCount = Array.isArray(cData)
-            ? cData.filter(
-                (c: any) =>
-                  String(c.is_published).toLowerCase() === 'true' ||
-                  String(c.is_published) === '1'
-              ).length
-            : 0;
-        }
-
-        if (configRes && configRes.ok) {
-          const cfg = await configRes.json();
-          setSystemReady(cfg.summary?.allConfigured && cfg.summary?.allTabsDetected);
-        }
-
-        setStats({
-          beatsCount: bCount,
-          videosCount: vCount,
-          cctvCount: cCount,
-        });
-      } catch (err) {
-        console.error('Error fetching admin dashboard stats:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadStats();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.href = '/admin/login';
+  const handleInitDb = async () => {
+    setIsInitializing(true);
+    try {
+      await initializeDb();
+      setIsDbInitialized(true);
+      alert("Database and Google Sheet schema initialized successfully!");
+    } catch (e: any) {
+      alert("Failed to initialize database: " + (e?.message || "Unknown error"));
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const handleSheetSync = async () => {
+    setIsSyncingSheet(true);
+    setSyncMessage(null);
+    try {
+      const result = await syncWithGoogleSheet();
+      setSyncMessage(result.message);
+      setTimeout(() => setSyncMessage(null), 5000);
+    } catch (err: any) {
+      alert("Google Sheet sync error: " + (err.message || "Unknown error"));
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  const tabs = [
+    {
+      id: "songs" as Tab,
+      label: "Beat Store",
+      icon: <Music className="w-5 h-5" />,
+    },
+    {
+      id: "videos" as Tab,
+      label: "Portfolio Videos",
+      icon: <Video className="w-5 h-5" />,
+    },
+    {
+      id: "cctv" as Tab,
+      label: "CCTV / Media Feeds",
+      icon: <Radio className="w-5 h-5" />,
+    },
+  ];
+
+  const handleLogout = () => {
+    logout();
   };
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex flex-col font-sans selection:bg-red-500/30">
-      {/* Top Admin Navigation Bar */}
-      <header className="border-b border-zinc-900 bg-zinc-950/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
-          <span className="font-display font-black text-white text-lg tracking-tight uppercase">
-            AMITDIED <span className="text-red-600">{'//'} CONTROL</span>
-          </span>
-          <span className="hidden sm:inline text-zinc-700">|</span>
-          <span className="hidden sm:inline text-[11px] font-mono text-zinc-400">
-            PRIVATE CONTENT MANAGEMENT
-          </span>
+    <div className="min-h-screen bg-black text-zinc-100 flex flex-col md:flex-row font-sans selection:bg-red-500/30">
+      {/* Mobile Header */}
+      <div className="md:hidden flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950">
+        <div>
+          <h1 className="text-lg font-display font-bold">AMITDIED Admin</h1>
+          <span className="text-[10px] text-zinc-500 font-mono">Google OAuth Active</span>
+        </div>
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 text-zinc-400 hover:text-white"
+        >
+          {isMobileMenuOpen ? (
+            <X className="w-6 h-6" />
+          ) : (
+            <Menu className="w-6 h-6" />
+          )}
+        </button>
+      </div>
+
+      {/* Sidebar */}
+      <div
+        className={`
+        fixed md:static inset-0 z-50 bg-zinc-950 border-r border-zinc-800 w-full md:w-72 flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0
+        ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
+      `}
+      >
+        <div className="p-6 hidden md:block border-b border-zinc-900">
+          <h1 className="text-2xl font-display font-bold tracking-tight text-white">
+            AMITDIED <span className="text-red-600">ADMIN</span>
+          </h1>
+          <p className="text-xs text-zinc-400 mt-1">
+            Google Drive & Sheets Studio Console
+          </p>
+
+          {/* Admin User Info */}
+          <div className="mt-4 p-3 bg-zinc-900/80 border border-zinc-800/80 rounded-xl flex items-center gap-3">
+            {adminUser?.picture ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={adminUser.picture}
+                alt="Admin Avatar"
+                className="w-8 h-8 rounded-full border border-red-500/50"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-red-950 border border-red-800 flex items-center justify-center text-red-400 font-mono text-xs font-bold">
+                AD
+              </div>
+            )}
+            <div className="overflow-hidden min-w-0">
+              <div className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                <span>{adminUser?.name || "AMITDIED"}</span>
+                <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+              </div>
+              <div className="text-[10px] text-zinc-400 font-mono truncate">
+                {adminUser?.email || "AMITDIED69@gmail.com"}
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 font-mono text-xs">
-          {/* User Email Pill */}
-          <div className="hidden md:flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg text-zinc-300">
-            <ShieldCheck className="w-3.5 h-3.5 text-red-500" />
-            <span className="text-[11px]">{sessionUserEmail}</span>
-            {isDevAuth && (
-              <span className="text-[9px] bg-amber-950/60 text-amber-400 border border-amber-800/80 px-1.5 py-0.2 rounded">
-                DEV
-              </span>
-            )}
-          </div>
-
-          {/* Setup / Config Status Link */}
-          <Link
-            href="/admin/setup"
-            className="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+        {/* Mobile menu close button inside sidebar */}
+        <div className="flex md:hidden justify-end p-4">
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="p-2 text-zinc-400 hover:text-white"
           >
-            <Settings className="w-3.5 h-3.5 text-zinc-400" />
-            <span className="hidden sm:inline">SETUP &amp; STATUS</span>
-          </Link>
+            <X className="w-6 h-6" />
+          </button>
+        </div>
 
-          {/* Visit Live Website */}
+        <div className="px-4 py-3">
           <Link
             href="/"
             target="_blank"
-            className="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+            rel="noopener noreferrer"
+            className="w-full flex items-center justify-between px-3.5 py-2 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white rounded-lg transition-colors text-xs font-medium group"
           >
-            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
-            <span className="hidden sm:inline">VIEW SITE</span>
+            <span className="flex items-center gap-2">
+              <ExternalLink className="w-3.5 h-3.5 text-red-500 group-hover:scale-110 transition-transform" />
+              <span>View Public Website</span>
+            </span>
+            <span className="text-[10px] text-zinc-500 font-mono">↗</span>
           </Link>
+        </div>
 
-          {/* Sign Out */}
+        {/* Navigation Tabs */}
+        <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all text-sm ${
+                activeTab === tab.id
+                  ? "bg-red-600/15 text-red-400 font-bold border border-red-600/30 shadow-sm"
+                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 border border-transparent"
+              }`}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+
+          {/* Google Integration Status Card */}
+          <div className="mt-6 pt-4 border-t border-zinc-900 font-mono text-[11px] space-y-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold px-1 flex items-center justify-between">
+              <span>Google Integrations</span>
+              <span className="text-emerald-400 flex items-center gap-1 font-semibold text-[9px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                SYNCED
+              </span>
+            </div>
+
+            <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-3 space-y-2 text-zinc-400">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-zinc-300">
+                  <TableProperties className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Google Sheet</span>
+                </span>
+                <span className="text-[9px] text-zinc-500">BEATS • CCTV</span>
+              </div>
+              <div className="text-[9px] text-zinc-500 truncate" title={googleStatus?.sheetId || "1gnlLIweCywZ_5V__OLqGPNfDLjqKCB7Y1PHBQnfDBLA"}>
+                ID: {googleStatus?.sheetId ? `${googleStatus.sheetId.slice(0, 12)}...` : "1gnlLIweCyw..."}
+              </div>
+
+              <div className="pt-1.5 border-t border-zinc-800/60 space-y-1">
+                <div className="flex items-center justify-between text-zinc-300">
+                  <span className="flex items-center gap-1.5">
+                    <HardDrive className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Drive Folders</span>
+                  </span>
+                  <span className="text-[9px] text-emerald-400">3 CONNECTED</span>
+                </div>
+                <div className="text-[9px] text-zinc-500 space-y-0.5 pl-5">
+                  <div>• AUDIO → Beat Audio</div>
+                  <div>• COVERS → Beat Covers</div>
+                  <div>• MEDIA → CCTV Video</div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSheetSync}
+                disabled={isSyncingSheet}
+                className="w-full mt-2 py-1.5 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 text-[10px] font-semibold disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 text-red-400 ${isSyncingSheet ? "animate-spin" : ""}`} />
+                <span>{isSyncingSheet ? "Syncing..." : "Sync With Google Sheet"}</span>
+              </button>
+
+              {syncMessage && (
+                <div className="text-[9px] text-emerald-400 leading-tight bg-emerald-950/40 p-1.5 rounded border border-emerald-900/60">
+                  {syncMessage}
+                </div>
+              )}
+            </div>
+          </div>
+        </nav>
+
+        {/* Bottom Actions */}
+        <div className="p-4 border-t border-zinc-900 space-y-2 bg-zinc-950">
+          <button
+            onClick={handleInitDb}
+            disabled={isInitializing}
+            className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg border transition-colors ${
+              isDbInitialized
+                ? "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                : "bg-yellow-950/30 border-yellow-800 text-yellow-400 hover:bg-yellow-900/40"
+            }`}
+            title="Re-synchronize and verify database"
+          >
+            <span className="flex items-center gap-2">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isDbInitialized
+                    ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                    : "bg-yellow-500 animate-pulse"
+                }`}
+              />
+              <span>{isDbInitialized ? "DB Online" : "DB Missing"}</span>
+            </span>
+            <span className="text-[10px] text-zinc-500 underline hover:text-white">
+              {isInitializing ? "Syncing..." : "Repair"}
+            </span>
+          </button>
+
           <button
             onClick={handleLogout}
-            className="flex items-center gap-1.5 bg-red-950/40 hover:bg-red-900/60 border border-red-800/80 text-red-300 px-3 py-1.5 rounded-lg transition-colors"
+            className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-lg transition-colors text-sm font-medium"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">LOGOUT</span>
+            <LogOut className="w-4 h-4 text-zinc-400" />
+            <span>Sign Out</span>
           </button>
         </div>
-      </header>
+      </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-8 space-y-8">
-        {/* Hero Banner */}
-        <div className="bg-zinc-950 border border-zinc-800/90 rounded-2xl p-6 sm:p-8 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-red-600/5 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-2 font-mono text-xs text-red-500 uppercase tracking-widest mb-2 font-bold">
-                <span>SURVEILLANCE NODE ONLINE</span>
-                <span className="text-zinc-700">•</span>
-                <span className="text-zinc-400">GOOGLE DRIVE + SHEETS BACKEND</span>
+      <div className="flex-1 overflow-y-auto bg-zinc-950/50 p-4 md:p-8">
+        {!isDbInitialized && (
+          <div className="mb-6 p-4 rounded-xl bg-yellow-950/40 border border-yellow-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center space-x-3 text-yellow-400">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <div>
+                <h4 className="font-semibold text-sm">
+                  Database not initialized
+                </h4>
+                <p className="text-xs text-yellow-500/80">
+                  Data/db.json does not exist. Click Initialize to seed your beats, portfolio, and Google Sheet schemas.
+                </p>
               </div>
-              <h1 className="text-3xl sm:text-5xl font-display font-black tracking-tight text-white uppercase">
-                AMITDIED CONTENT CONTROL
-              </h1>
-              <p className="text-xs sm:text-sm text-zinc-400 font-mono mt-2 max-w-2xl leading-relaxed">
-                Add, edit, and organize Beats, YouTube Portfolio Videos, and CCTV Feeds in real-time. Changes update the deployed website instantly without touching code or redeploying.
-              </p>
             </div>
-
-            {/* Quick Status Pill */}
-            <Link
-              href="/admin/setup"
-              className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 p-4 rounded-xl flex items-center gap-3 shrink-0 transition-colors group"
+            <button
+              onClick={handleInitDb}
+              disabled={isInitializing}
+              className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-black font-semibold text-xs rounded-lg transition-colors flex items-center space-x-2 flex-shrink-0"
             >
-              {systemReady === false ? (
-                <AlertTriangle className="w-5 h-5 text-amber-500" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-              )}
-              <div className="font-mono text-xs">
-                <div className="text-zinc-400 text-[10px] uppercase tracking-wider">
-                  SYSTEM STATUS
-                </div>
-                <div className="text-white font-bold group-hover:text-red-400 transition-colors">
-                  {systemReady === false ? 'Configuration Warning' : 'Database Ready'}
-                </div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors ml-2" />
-            </Link>
+              <Database className="w-4 h-4" />
+              <span>
+                {isInitializing
+                  ? "Initializing..."
+                  : "Initialize Database"}
+              </span>
+            </button>
           </div>
-        </div>
+        )}
 
-        {/* 3 Main Management Sections */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Section 1: BEATS */}
+        <AnimatePresence mode="wait">
           <motion.div
-            initial={{ opacity: 0, y: 15 }}
+            key={activeTab}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="group relative bg-zinc-950 border border-zinc-800/90 hover:border-red-600/80 rounded-2xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_0_35px_rgba(220,38,38,0.2)]"
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
           >
-            <div>
-              <div className="flex items-center justify-between mb-5">
-                <div className="w-12 h-12 bg-red-950/40 border border-red-800/80 rounded-xl flex items-center justify-center text-red-500 group-hover:scale-105 transition-transform">
-                  <Music className="w-6 h-6" />
-                </div>
-                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 bg-zinc-900 px-2 py-1 rounded border border-zinc-800">
-                  DRIVE AUDIO + SHEETS
-                </span>
-              </div>
-
-              <h2 className="text-2xl font-display font-black uppercase text-white tracking-tight">
-                BEATS
-              </h2>
-              <p className="text-xs text-zinc-400 font-mono mt-1.5 leading-relaxed">
-                Upload MP3/WAV files to Google Drive, set BPM, genre, pricing, and tag metadata.
-              </p>
-
-              <div className="mt-6 pt-5 border-t border-zinc-900 flex items-baseline gap-2">
-                <span className="text-4xl font-display font-black text-white">
-                  {loading ? '...' : stats.beatsCount}
-                </span>
-                <span className="font-mono text-xs text-zinc-500 uppercase">
-                  PUBLISHED BEATS
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <Link
-                href="/admin/beats"
-                className="w-full inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold uppercase tracking-widest py-3 px-4 rounded-xl transition-all shadow-lg group-hover:shadow-[0_0_20px_rgba(220,38,38,0.5)]"
-              >
-                <span>MANAGE BEATS</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
+            {activeTab === "songs" && <BeatsManager />}
+            {activeTab === "videos" && <VideosManager />}
+            {activeTab === "cctv" && <TransmissionsManager />}
           </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
 
-          {/* Section 2: PORTFOLIO */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="group relative bg-zinc-950 border border-zinc-800/90 hover:border-red-600/80 rounded-2xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_0_35px_rgba(220,38,38,0.2)]"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-5">
-                <div className="w-12 h-12 bg-red-950/40 border border-red-800/80 rounded-xl flex items-center justify-center text-red-500 group-hover:scale-105 transition-transform">
-                  <Video className="w-6 h-6" />
-                </div>
-                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 bg-zinc-900 px-2 py-1 rounded border border-zinc-800">
-                  YOUTUBE EMBED
-                </span>
-              </div>
+// ==========================================
+// BEATS MANAGER (AUDIO & COVERS UPLOAD TO DRIVE)
+// ==========================================
 
-              <h2 className="text-2xl font-display font-black uppercase text-white tracking-tight">
-                PORTFOLIO
-              </h2>
-              <p className="text-xs text-zinc-400 font-mono mt-1.5 leading-relaxed">
-                Paste YouTube video links. Auto-extracts video IDs, manages order, titles, and placement tags.
-              </p>
+function BeatsManager() {
+  const [beats, setBeats] = useState<any[]>([]);
+  const [, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
-              <div className="mt-6 pt-5 border-t border-zinc-900 flex items-baseline gap-2">
-                <span className="text-4xl font-display font-black text-white">
-                  {loading ? '...' : stats.videosCount}
-                </span>
-                <span className="font-mono text-xs text-zinc-500 uppercase">
-                  PUBLISHED VIDEOS
-                </span>
-              </div>
-            </div>
+  // Edit state
+  const [editingBeat, setEditingBeat] = useState<any | null>(null);
+  const [editCoverFile, setEditCoverFile] = useState<File | null>(null);
+  const [editAudioFile, setEditAudioFile] = useState<File | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-            <div className="mt-8">
-              <Link
-                href="/admin/portfolio"
-                className="w-full inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold uppercase tracking-widest py-3 px-4 rounded-xl transition-all shadow-lg group-hover:shadow-[0_0_20px_rgba(220,38,38,0.5)]"
-              >
-                <span>MANAGE PORTFOLIO</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </motion.div>
+  const [newBeat, setNewBeat] = useState({
+    title: "",
+    producer: "AMITDIED",
+    bpm: 120,
+    key: "",
+    genre: "Trap",
+    moodTags: "",
+    price: 29.99,
+    coverUrl: "",
+    audioUrl: "",
+    buyLink: "",
+    description: "",
+  });
 
-          {/* Section 3: CCTV FEED */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="group relative bg-zinc-950 border border-zinc-800/90 hover:border-red-600/80 rounded-2xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_0_35px_rgba(220,38,38,0.2)]"
-          >
-            <div>
-              <div className="flex items-center justify-between mb-5">
-                <div className="w-12 h-12 bg-red-950/40 border border-red-800/80 rounded-xl flex items-center justify-center text-red-500 group-hover:scale-105 transition-transform">
-                  <Radio className="w-6 h-6 animate-pulse" />
-                </div>
-                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 bg-zinc-900 px-2 py-1 rounded border border-zinc-800">
-                  MULTI-SOURCE NET
-                </span>
-              </div>
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
 
-              <h2 className="text-2xl font-display font-black uppercase text-white tracking-tight">
-                CCTV FEED
-              </h2>
-              <p className="text-xs text-zinc-400 font-mono mt-1.5 leading-relaxed">
-                Curate YouTube BTS videos, documentary videos, or upload direct Drive videos and surveillance photos.
-              </p>
+  const loadBeats = useCallback(async () => {
+    try {
+      const data = await getCustomBeats();
+      setBeats(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-              <div className="mt-6 pt-5 border-t border-zinc-900 flex items-baseline gap-2">
-                <span className="text-4xl font-display font-black text-white">
-                  {loading ? '...' : stats.cctvCount}
-                </span>
-                <span className="font-mono text-xs text-zinc-500 uppercase">
-                  PUBLISHED ITEMS
-                </span>
-              </div>
-            </div>
+  useEffect(() => {
+    let active = true;
+    getCustomBeats()
+      .then((data) => {
+        if (active) {
+          setBeats(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
-            <div className="mt-8">
-              <Link
-                href="/admin/cctv"
-                className="w-full inline-flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold uppercase tracking-widest py-3 px-4 rounded-xl transition-all shadow-lg group-hover:shadow-[0_0_20px_rgba(220,38,38,0.5)]"
-              >
-                <span>MANAGE CCTV</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </motion.div>
-        </div>
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUploading(true);
 
-        {/* Quick Help & Architecture Summary */}
-        <div className="bg-zinc-950/60 border border-zinc-900 rounded-xl p-6 font-mono text-xs text-zinc-400 space-y-3">
-          <div className="flex items-center gap-2 text-white font-bold">
-            <Layers className="w-4 h-4 text-red-500" />
-            <span>ARCHITECTURAL GUIDELINES</span>
-          </div>
-          <p className="leading-relaxed text-[11px]">
-            • Audio and video media files are stored securely in Google Drive (<code className="text-zinc-200">AMITDIED BEATS/</code> and <code className="text-zinc-200">AMITDIED MEDIA/</code>).
-            <br />
-            • All database metadata, tags, and publish states reside in your Google Spreadsheet in the <code className="text-zinc-200">BEATS</code>, <code className="text-zinc-200">PORTFOLIO</code>, and <code className="text-zinc-200">CCTV</code> tabs.
-            <br />
-            • The public frontend reads directly from Google Sheets so updates are live instantly without redeploying.
+    let coverUrl = newBeat.coverUrl;
+    let audioUrl = newBeat.audioUrl;
+
+    try {
+      // Upload Cover to Google Drive COVERS folder (1b1T6joDt1c9wxhexUc31n1YI_DdebzOm)
+      if (coverFile) {
+        const formData = new FormData();
+        formData.append("file", coverFile);
+        formData.append("folderType", "covers");
+        coverUrl = await uploadFile(formData, "covers");
+      }
+
+      // Upload Audio to Google Drive AUDIO folder (1E3no0R-HSGpK_ihIaDMzLutTs3HwD02s)
+      if (audioFile) {
+        const formData = new FormData();
+        formData.append("file", audioFile);
+        formData.append("folderType", "audio");
+        audioUrl = await uploadFile(formData, "audio");
+      }
+
+      await addBeat({ ...newBeat, coverUrl, audioUrl });
+
+      const beatsAfter = await getCustomBeats();
+      setBeats(beatsAfter);
+
+      setIsAdding(false);
+      setNewBeat({
+        title: "",
+        producer: "AMITDIED",
+        bpm: 120,
+        key: "",
+        genre: "Trap",
+        moodTags: "",
+        price: 29.99,
+        coverUrl: "",
+        audioUrl: "",
+        buyLink: "",
+        description: "",
+      });
+      setCoverFile(null);
+      setAudioFile(null);
+      alert("Beat saved & synced to Google Sheets and Google Drive!");
+    } catch (error: any) {
+      console.error("Upload failed", error);
+      alert("Failed to save beat: " + (error.message || "Unknown error"));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const startEdit = (beat: any) => {
+    setEditingBeat({
+      ...beat,
+      moodTags: Array.isArray(beat.moodTags) ? beat.moodTags.join(", ") : beat.moodTags || "",
+    });
+    setEditCoverFile(null);
+    setEditAudioFile(null);
+    setIsAdding(false);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBeat) return;
+    setIsUpdating(true);
+
+    let coverUrl = editingBeat.coverUrl;
+    let audioUrl = editingBeat.audioUrl;
+
+    try {
+      // Upload replace cover to COVERS folder
+      if (editCoverFile) {
+        const formData = new FormData();
+        formData.append("file", editCoverFile);
+        formData.append("folderType", "covers");
+        coverUrl = await uploadFile(formData, "covers");
+      }
+
+      // Upload replace audio to AUDIO folder
+      if (editAudioFile) {
+        const formData = new FormData();
+        formData.append("file", editAudioFile);
+        formData.append("folderType", "audio");
+        audioUrl = await uploadFile(formData, "audio");
+      }
+
+      await updateBeat(editingBeat.id, {
+        ...editingBeat,
+        coverUrl,
+        audioUrl,
+      });
+
+      const updated = await getCustomBeats();
+      setBeats(updated);
+      setEditingBeat(null);
+      alert("Beat updated & synced to Google Sheet!");
+    } catch (error: any) {
+      console.error("Update failed", error);
+      alert("Failed to update beat: " + (error.message || "Unknown error"));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDelete = async (id: string, e?: any) => {
+    if (e) e.preventDefault();
+    if (!confirm("Are you sure you want to delete this beat from the store & Google Sheet?")) return;
+    try {
+      await deleteBeat(id);
+      const updatedBeats = await getCustomBeats();
+      setBeats(updatedBeats);
+      if (editingBeat?.id === id) setEditingBeat(null);
+      alert("Beat deleted from DB and Google Sheet.");
+    } catch (err: any) {
+      alert("Failed to delete beat: " + (err.message || "Unknown error"));
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800">
+        <div>
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <span>Store Beats</span>
+            <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono">
+              {beats.length} TRACKS
+            </span>
+          </h3>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Synced with Google Sheet <code className="text-zinc-300">BEATS</code> tab & Drive Folders (AUDIO & COVERS)
           </p>
         </div>
-      </main>
+        {!isAdding && !editingBeat && (
+          <button
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-lg active:scale-95 self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Beat</span>
+          </button>
+        )}
+      </div>
+
+      {/* Edit Form */}
+      {editingBeat && (
+        <form
+          onSubmit={handleUpdate}
+          className="bg-zinc-950 p-6 rounded-2xl border border-red-600/40 space-y-4 text-sm shadow-2xl"
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h4 className="font-bold text-white flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-red-500" />
+              <span>Editing: <strong className="text-red-400">{editingBeat.title}</strong></span>
+            </h4>
+            <button
+              type="button"
+              onClick={() => setEditingBeat(null)}
+              className="text-zinc-500 hover:text-white p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Beat Title</label>
+              <input
+                required
+                type="text"
+                value={editingBeat.title}
+                onChange={(e) =>
+                  setEditingBeat({ ...editingBeat, title: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Producer Name</label>
+              <input
+                type="text"
+                value={editingBeat.producer || ""}
+                onChange={(e) =>
+                  setEditingBeat({ ...editingBeat, producer: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">BPM</label>
+              <input
+                required
+                type="number"
+                value={editingBeat.bpm}
+                onChange={(e) =>
+                  setEditingBeat({ ...editingBeat, bpm: Number(e.target.value) })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Key</label>
+              <input
+                type="text"
+                value={editingBeat.key || ""}
+                onChange={(e) =>
+                  setEditingBeat({ ...editingBeat, key: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Price ($)</label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={editingBeat.price}
+                onChange={(e) =>
+                  setEditingBeat({ ...editingBeat, price: Number(e.target.value) })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Genre</label>
+              <input
+                required
+                type="text"
+                value={editingBeat.genre}
+                onChange={(e) =>
+                  setEditingBeat({ ...editingBeat, genre: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Mood Tags (comma separated)</label>
+            <input
+              type="text"
+              value={editingBeat.moodTags}
+              onChange={(e) =>
+                setEditingBeat({ ...editingBeat, moodTags: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
+              <label className="block text-zinc-300 mb-1.5 text-xs font-semibold flex items-center justify-between">
+                <span>Replace Cover Image</span>
+                <span className="text-[10px] text-blue-400 font-mono">→ DRIVE COVERS FOLDER</span>
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setEditCoverFile(e.target.files?.[0] || null)}
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
+              />
+            </div>
+            <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
+              <label className="block text-zinc-300 mb-1.5 text-xs font-semibold flex items-center justify-between">
+                <span>Replace Beat Audio</span>
+                <span className="text-[10px] text-blue-400 font-mono">→ DRIVE AUDIO FOLDER</span>
+              </label>
+              <input
+                type="file"
+                accept=".mp3,audio/mpeg,.wav,audio/wav"
+                onChange={(e) => setEditAudioFile(e.target.files?.[0] || null)}
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Buy / Checkout Link (Optional)</label>
+            <input
+              type="url"
+              placeholder="https://..."
+              value={editingBeat.buyLink || ""}
+              onChange={(e) =>
+                setEditingBeat({ ...editingBeat, buyLink: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Description (Optional)</label>
+            <textarea
+              value={editingBeat.description || ""}
+              onChange={(e) =>
+                setEditingBeat({ ...editingBeat, description: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2 text-white h-20 focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setEditingBeat(null)}
+              className="px-4 py-2 text-zinc-400 hover:text-white text-xs font-bold uppercase"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isUpdating}
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition-colors shadow-lg"
+            >
+              {isUpdating ? "Saving to Drive & Sheets..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Beats List */}
+      <div className="space-y-3">
+        {beats.map((beat) => (
+          <div
+            key={beat.id}
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-colors"
+          >
+            <div className="flex items-center gap-4 min-w-0">
+              {beat.coverUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={beat.coverUrl}
+                  alt={beat.title}
+                  className="w-14 h-14 rounded-lg object-cover border border-zinc-800 flex-shrink-0 bg-zinc-950"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "/placeholder-cover.png";
+                  }}
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center flex-shrink-0 text-zinc-600">
+                  <Music className="w-6 h-6" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="font-bold text-white truncate">{beat.title}</h4>
+                  <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono font-semibold">
+                    ${Number(beat.price).toFixed(2)}
+                  </span>
+                  <span className="text-xs bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded">
+                    {beat.genre || "Trap"}
+                  </span>
+                  <span className="text-xs text-zinc-500 font-mono">
+                    {beat.bpm} BPM {beat.key ? `• ${beat.key}` : ""}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mt-1.5 text-xs text-zinc-400 flex-wrap">
+                  {beat.producer && <span>Prod. {beat.producer}</span>}
+                  <span className="flex items-center gap-1 font-mono">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        beat.audioUrl ? "bg-emerald-500" : "bg-zinc-600"
+                      }`}
+                    />
+                    {beat.audioUrl ? "Audio Ready" : "No Audio"}
+                  </span>
+                  {beat.coverUrl?.includes("/api/drive") && (
+                    <span className="text-[10px] bg-blue-950/60 text-blue-400 border border-blue-900/60 px-1.5 py-0.2 rounded font-mono">
+                      Drive Asset
+                    </span>
+                  )}
+                  {beat.buyLink && (
+                    <a
+                      href={beat.buyLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-500 hover:text-red-400 underline truncate max-w-[150px]"
+                    >
+                      Buy Link
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={() => startEdit(beat)}
+                className="p-2 text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-medium"
+                title="Edit Beat"
+              >
+                <Pencil className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Edit</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => handleDelete(beat.id, e)}
+                className="p-2 text-red-500 hover:text-red-400 bg-red-950/30 hover:bg-red-900/50 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-medium"
+                title="Delete Beat"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Add New Beat Form */}
+      {isAdding ? (
+        <form
+          onSubmit={handleAdd}
+          className="bg-zinc-950 p-6 rounded-2xl border border-zinc-800 space-y-4 text-sm shadow-xl"
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h4 className="font-bold text-white flex items-center gap-2">
+              <Plus className="w-4 h-4 text-red-500" />
+              <span>Add New Store Beat (Drive Upload)</span>
+            </h4>
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              className="text-zinc-500 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Beat Title</label>
+              <input
+                required
+                type="text"
+                placeholder="Title"
+                value={newBeat.title}
+                onChange={(e) =>
+                  setNewBeat({ ...newBeat, title: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Producer Name</label>
+              <input
+                type="text"
+                placeholder="Producer"
+                value={newBeat.producer}
+                onChange={(e) =>
+                  setNewBeat({ ...newBeat, producer: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">BPM</label>
+              <input
+                required
+                type="number"
+                placeholder="120"
+                value={newBeat.bpm}
+                onChange={(e) =>
+                  setNewBeat({ ...newBeat, bpm: Number(e.target.value) })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Key</label>
+              <input
+                type="text"
+                placeholder="e.g. C Min"
+                value={newBeat.key}
+                onChange={(e) =>
+                  setNewBeat({ ...newBeat, key: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Price ($)</label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                placeholder="29.99"
+                value={newBeat.price}
+                onChange={(e) =>
+                  setNewBeat({ ...newBeat, price: Number(e.target.value) })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Genre</label>
+              <input
+                required
+                type="text"
+                placeholder="Trap / Rage / Drill"
+                value={newBeat.genre}
+                onChange={(e) =>
+                  setNewBeat({ ...newBeat, genre: e.target.value })
+                }
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
+              Mood Tags (comma separated)
+            </label>
+            <input
+              type="text"
+              placeholder="Dark, Energetic, Bouncy..."
+              value={newBeat.moodTags}
+              onChange={(e) =>
+                setNewBeat({ ...newBeat, moodTags: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
+              <label className="block text-zinc-300 mb-1.5 text-xs font-semibold flex items-center justify-between">
+                <span>Cover Image (jpg, png, webp)</span>
+                <span className="text-[10px] text-blue-400 font-mono">→ COVERS FOLDER</span>
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
+              />
+            </div>
+            <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
+              <label className="block text-zinc-300 mb-1.5 text-xs font-semibold flex items-center justify-between">
+                <span>Beat Audio (mp3, wav)</span>
+                <span className="text-[10px] text-blue-400 font-mono">→ AUDIO FOLDER</span>
+              </label>
+              <input
+                type="file"
+                accept=".mp3,audio/mpeg,.wav,audio/wav"
+                onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Buy Link</label>
+            <input
+              type="url"
+              placeholder="https://..."
+              value={newBeat.buyLink}
+              onChange={(e) =>
+                setNewBeat({ ...newBeat, buyLink: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Description</label>
+            <textarea
+              placeholder="Beat description..."
+              value={newBeat.description}
+              onChange={(e) =>
+                setNewBeat({ ...newBeat, description: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2 text-white h-24 focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              className="px-4 py-2 text-zinc-400 hover:text-white text-xs font-bold uppercase"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isUploading}
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition-colors shadow-lg"
+            >
+              {isUploading ? "Uploading to Drive & Sheets..." : "Save Beat"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        !editingBeat && (
+          <button
+            onClick={() => setIsAdding(true)}
+            className="w-full py-4 border-2 border-dashed border-zinc-800 hover:border-red-600/50 text-zinc-500 hover:text-white rounded-2xl flex items-center justify-center space-x-2 transition-colors"
+          >
+            <Plus className="w-5 h-5 text-red-500" />
+            <span>Add New Store Beat</span>
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// PORTFOLIO VIDEOS MANAGER (SHEETS SYNC)
+// ==========================================
+
+function VideosManager() {
+  const [videos, setVideos] = useState<any[]>([]);
+  const [, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingVideo, setEditingVideo] = useState<any | null>(null);
+  const [isUpdatingVideo, setIsUpdatingVideo] = useState(false);
+
+  const [newVideo, setNewVideo] = useState({
+    title: "",
+    url: "",
+    description: "",
+  });
+
+  const loadVideos = useCallback(async () => {
+    try {
+      const data = await getCustomVideos();
+      setVideos(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getCustomVideos()
+      .then((data) => {
+        if (active) {
+          setVideos(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newVideo.url) {
+      await addVideo(newVideo);
+      setIsAdding(false);
+      setNewVideo({ title: "", url: "", description: "" });
+      loadVideos();
+    }
+  };
+
+  const startEditVideo = (video: any) => {
+    setEditingVideo({ ...video });
+    setIsAdding(false);
+  };
+
+  const handleUpdateVideo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingVideo) return;
+    setIsUpdatingVideo(true);
+    try {
+      await updateVideo(editingVideo.id, editingVideo);
+      const updated = await getCustomVideos();
+      setVideos(updated);
+      setEditingVideo(null);
+      alert("Video updated & synced to Google Sheet!");
+    } catch (err: any) {
+      alert("Failed to update video: " + (err.message || "Unknown error"));
+    } finally {
+      setIsUpdatingVideo(false);
+    }
+  };
+
+  const handleDelete = async (id: string, e?: any) => {
+    if (e) e.preventDefault();
+    if (!confirm("Are you sure you want to delete this video from the portfolio & Google Sheet?")) return;
+    try {
+      await deleteVideo(id);
+      const updatedVideos = await getCustomVideos();
+      setVideos(updatedVideos);
+      if (editingVideo?.id === id) setEditingVideo(null);
+      alert("Video removed from DB and Google Sheet");
+    } catch (err: any) {
+      alert("Failed to delete video: " + (err.message || "Unknown error"));
+    }
+  };
+
+  const extractYoutubeId = (url: string) => {
+    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    return match ? match[1] : null;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800">
+        <div>
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <span>Portfolio Videos</span>
+            <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono">
+              {videos.length} VIDEOS
+            </span>
+          </h3>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Synced with Google Sheet <code className="text-zinc-300">PORTFOLIO</code> tab
+          </p>
+        </div>
+        {!isAdding && !editingVideo && (
+          <button
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-lg active:scale-95 self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Video</span>
+          </button>
+        )}
+      </div>
+
+      {/* Edit Video Form */}
+      {editingVideo && (
+        <form
+          onSubmit={handleUpdateVideo}
+          className="bg-zinc-950 p-6 rounded-2xl border border-red-600/40 space-y-4 shadow-2xl text-sm"
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h4 className="font-bold text-white flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-red-500" />
+              <span>Editing: <strong className="text-red-400">{editingVideo.title || "Video"}</strong></span>
+            </h4>
+            <button
+              type="button"
+              onClick={() => setEditingVideo(null)}
+              className="text-zinc-500 hover:text-white p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Video Title</label>
+            <input
+              type="text"
+              placeholder="Title"
+              value={editingVideo.title || ""}
+              onChange={(e) =>
+                setEditingVideo({ ...editingVideo, title: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">YouTube URL</label>
+            <input
+              required
+              type="url"
+              placeholder="https://youtube.com/..."
+              value={editingVideo.url || ""}
+              onChange={(e) =>
+                setEditingVideo({ ...editingVideo, url: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none font-mono text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Description (Optional)</label>
+            <textarea
+              placeholder="Description..."
+              value={editingVideo.description || ""}
+              onChange={(e) =>
+                setEditingVideo({ ...editingVideo, description: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2 text-white h-20 focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setEditingVideo(null)}
+              className="px-4 py-2 text-zinc-400 hover:text-white text-xs font-bold uppercase"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isUpdatingVideo}
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition-colors shadow-lg"
+            >
+              {isUpdatingVideo ? "Saving to Sheet..." : "Update Video"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Videos List */}
+      <div className="space-y-3">
+        {videos.map((video) => {
+          const ytId = extractYoutubeId(video.url);
+          return (
+            <div
+              key={video.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-colors"
+            >
+              <div className="flex items-center gap-4 min-w-0">
+                {ytId ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`}
+                    alt={video.title || "Video Thumbnail"}
+                    className="w-20 h-14 rounded-lg object-cover border border-zinc-800 flex-shrink-0 bg-zinc-950"
+                  />
+                ) : (
+                  <div className="w-20 h-14 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center flex-shrink-0 text-zinc-600">
+                    <Video className="w-6 h-6" />
+                  </div>
+                )}
+                <div className="overflow-hidden min-w-0">
+                  <h4 className="font-bold text-white mb-1 truncate">
+                    {video.title || "Untitled Video"}
+                  </h4>
+                  <a
+                    href={video.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-xs text-zinc-400 hover:text-red-400 truncate block transition-colors"
+                  >
+                    {video.url}
+                  </a>
+                  {video.description && (
+                    <p className="text-xs text-zinc-500 truncate mt-1">{video.description}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => startEditVideo(video)}
+                  className="p-2 text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-medium"
+                  title="Edit Video"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(video.id, e)}
+                  className="p-2 text-red-500 hover:text-red-400 bg-red-950/30 hover:bg-red-900/50 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-medium"
+                  title="Delete Video"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add New Video Form */}
+      {isAdding ? (
+        <form
+          onSubmit={handleAdd}
+          className="bg-zinc-950 p-6 rounded-2xl border border-zinc-800 space-y-4 text-sm shadow-xl"
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h4 className="font-bold text-white flex items-center gap-2">
+              <Plus className="w-4 h-4 text-red-500" />
+              <span>Add New Portfolio Video</span>
+            </h4>
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              className="text-zinc-500 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
+              Video Title
+            </label>
+            <input
+              type="text"
+              placeholder="Title (e.g. AMITDIED - GOTHAM Visualizer)"
+              value={newVideo.title}
+              onChange={(e) =>
+                setNewVideo({ ...newVideo, title: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
+              YouTube URL
+            </label>
+            <input
+              required
+              type="url"
+              placeholder="https://youtube.com/watch?v=..."
+              value={newVideo.url}
+              onChange={(e) =>
+                setNewVideo({ ...newVideo, url: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none font-mono text-xs"
+            />
+          </div>
+          <div>
+            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
+              Description (Optional)
+            </label>
+            <textarea
+              placeholder="Description..."
+              value={newVideo.description}
+              onChange={(e) =>
+                setNewVideo({ ...newVideo, description: e.target.value })
+              }
+              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2 text-white h-24 focus:border-red-600 outline-none"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              className="px-4 py-2 text-zinc-400 hover:text-white text-xs font-bold uppercase"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-lg"
+            >
+              Save Video
+            </button>
+          </div>
+        </form>
+      ) : (
+        !editingVideo && (
+          <button
+            onClick={() => setIsAdding(true)}
+            className="w-full py-4 border-2 border-dashed border-zinc-800 hover:border-red-600/50 text-zinc-500 hover:text-white rounded-2xl flex items-center justify-center space-x-2 transition-colors"
+          >
+            <Plus className="w-5 h-5 text-red-500" />
+            <span>Add New Portfolio Video</span>
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// CCTV TRANSMISSIONS & MEDIA (DRIVE MEDIA UPLOAD + SHEETS)
+// ==========================================
+
+function TransmissionsManager() {
+  const [transmissions, setTransmissions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const [newTx, setNewTx] = useState({
+    camCode: "CAM-07 // STUDIO_SYNTH",
+    category: "cookup",
+    caption: "",
+    videoSnippetTitle: "",
+    imageUrl: "",
+    postUrl: "https://www.instagram.com/amitdied/",
+    likes: 120,
+    comments: 14,
+  });
+
+  const loadData = useCallback(async () => {
+    try {
+      const data = await getCustomTransmissions();
+      setTransmissions(data);
+    } catch (e) {
+      console.error("Failed to load transmissions:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getCustomTransmissions()
+      .then((data) => {
+        if (active) {
+          setTransmissions(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUploading(true);
+
+    let imageUrl = newTx.imageUrl;
+
+    try {
+      // If user selected a media file, upload directly to Google Drive MEDIA folder (1kaDYyeycE7jQkOjIV9xHQJaTCLWpXzqT)
+      if (mediaFile) {
+        const formData = new FormData();
+        formData.append("file", mediaFile);
+        formData.append("folderType", "media");
+        imageUrl = await uploadFile(formData, "media");
+      }
+
+      if (!newTx.caption || (!imageUrl && !mediaFile)) {
+        alert("Please provide at least a caption and upload a media screenshot or URL.");
+        setIsUploading(false);
+        return;
+      }
+
+      await addTransmission({
+        ...newTx,
+        imageUrl,
+        tags: ["#amitdied", "#darktrap", "#producertransmission"],
+      });
+
+      setIsAdding(false);
+      setMediaFile(null);
+      setNewTx({
+        camCode: "CAM-" + Math.floor(Math.random() * 90 + 10) + " // STUDIO",
+        category: "cookup",
+        caption: "",
+        videoSnippetTitle: "",
+        imageUrl: "",
+        postUrl: "https://www.instagram.com/amitdied/",
+        likes: Math.floor(Math.random() * 500 + 100),
+        comments: Math.floor(Math.random() * 50 + 10),
+      });
+      loadData();
+      alert("Transmission published & synced to Google Drive MEDIA & Google Sheet!");
+    } catch (e: any) {
+      alert("Failed to add transmission: " + e.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this transmission from CCTV & Google Sheet?")) return;
+    try {
+      await deleteTransmission(id);
+      loadData();
+    } catch (e: any) {
+      alert("Failed to delete transmission: " + e.message);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
+        <div>
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Radio className="w-5 h-5 text-red-500" />
+            <span>CCTV Feeds & Transmissions</span>
+            <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono">
+              {transmissions.length} FEEDS
+            </span>
+          </h2>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Synced with Google Sheet <code className="text-zinc-300">CCTV</code> tab & Google Drive MEDIA folder
+          </p>
+        </div>
+        <Link
+          href="/#cctv-feed"
+          target="_blank"
+          className="inline-flex items-center gap-2 px-3.5 py-2 bg-red-950/40 border border-red-800/60 hover:border-red-500 text-red-400 text-xs font-mono rounded-lg transition-colors self-start sm:self-auto"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          <span>Preview CCTV Section</span>
+        </Link>
+      </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-zinc-500 font-mono text-sm">
+          Loading transmissions...
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {transmissions.map((tx) => (
+            <div
+              key={tx.id}
+              className="bg-zinc-900/70 border border-zinc-800 rounded-xl overflow-hidden flex flex-col justify-between"
+            >
+              <div className="p-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between text-xs font-mono">
+                <span className="text-red-400 font-bold truncate">{tx.camCode}</span>
+                <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded text-zinc-300 uppercase">
+                  {tx.category}
+                </span>
+              </div>
+
+              <div className="relative h-44 bg-zinc-950 overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={tx.imageUrl}
+                  alt={tx.caption}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+
+              <div className="p-4 flex-1 flex flex-col justify-between font-mono">
+                <div>
+                  <div className="text-xs text-white font-bold mb-1 truncate">
+                    {tx.videoSnippetTitle || "SNIPPET_RECORDING"}
+                  </div>
+                  <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                    {tx.caption}
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between text-xs">
+                  <span className="text-zinc-500 text-[11px]">{tx.likes} Likes</span>
+                  <button
+                    onClick={() => handleDelete(tx.id)}
+                    className="p-1.5 text-zinc-500 hover:text-red-500 hover:bg-zinc-800 rounded transition-colors"
+                    title="Delete Transmission"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isAdding ? (
+        <form
+          onSubmit={handleAdd}
+          className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 space-y-4 font-mono text-xs shadow-2xl"
+        >
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Broadcast CCTV Transmission (Drive MEDIA Upload)
+            </h3>
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              className="text-zinc-500 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-zinc-400 mb-1">CCTV Code</label>
+              <input
+                type="text"
+                value={newTx.camCode}
+                onChange={(e) => setNewTx({ ...newTx, camCode: e.target.value })}
+                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+                placeholder="CAM-08 // MASTER_LAB"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-400 mb-1">Category</label>
+              <select
+                value={newTx.category}
+                onChange={(e) => setNewTx({ ...newTx, category: e.target.value })}
+                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+              >
+                <option value="cookup">Studio Cookup</option>
+                <option value="placement">Placement</option>
+                <option value="session">Vocals / Session</option>
+                <option value="lore">Aesthetic / Lore</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1">Snippet / Title Tag</label>
+            <input
+              type="text"
+              value={newTx.videoSnippetTitle}
+              onChange={(e) => setNewTx({ ...newTx, videoSnippetTitle: e.target.value })}
+              className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+              placeholder="e.g. MOOG_808_EXPERIMENT.WAV"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
+              <label className="block text-zinc-300 mb-1.5 font-semibold flex items-center justify-between">
+                <span>Upload Media Image/Video</span>
+                <span className="text-[10px] text-blue-400 font-mono">→ DRIVE MEDIA FOLDER</span>
+              </label>
+              <input
+                type="file"
+                accept="image/*,video/*"
+                onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
+                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-[10px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <label className="block text-zinc-400 mb-1">Or Existing Image URL</label>
+              <input
+                type="text"
+                value={newTx.imageUrl}
+                onChange={(e) => setNewTx({ ...newTx, imageUrl: e.target.value })}
+                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+                placeholder="https://... or leave empty if uploading file above"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1">Instagram Post / Reel Link</label>
+            <input
+              type="text"
+              value={newTx.postUrl}
+              onChange={(e) => setNewTx({ ...newTx, postUrl: e.target.value })}
+              className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+              placeholder="https://www.instagram.com/p/... or https://www.instagram.com/reel/..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-zinc-400 mb-1">Caption / Notes *</label>
+            <textarea
+              value={newTx.caption}
+              onChange={(e) => setNewTx({ ...newTx, caption: e.target.value })}
+              className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600 h-20"
+              placeholder="Behind the scenes details, analog chain, or session summary..."
+              required
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              className="px-4 py-2 text-zinc-400 hover:text-white uppercase tracking-wider font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isUploading}
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold uppercase tracking-wider transition-colors disabled:opacity-50 shadow-lg"
+            >
+              {isUploading ? "Uploading to Drive MEDIA..." : "Broadcast Transmission"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button
+          onClick={() => setIsAdding(true)}
+          className="w-full py-4 border-2 border-dashed border-zinc-800 hover:border-red-600/50 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center gap-2 font-mono text-xs uppercase tracking-widest transition-colors"
+        >
+          <Plus className="w-4 h-4 text-red-500" />
+          <span>Add New CCTV / Media Transmission</span>
+        </button>
+      )}
     </div>
   );
 }

@@ -1,57 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getValidGoogleAccessToken } from '@/lib/google/auth';
+import { getValidAccessToken } from '@/lib/google/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const searchParams = req.nextUrl.searchParams;
-  const fileId = searchParams.get('fileId');
+  const { searchParams } = req.nextUrl;
+  const fileId = searchParams.get('id');
 
   if (!fileId) {
-    return NextResponse.json({ error: 'fileId is required' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing file id parameter' }, { status: 400 });
   }
 
   try {
-    const token = await getValidGoogleAccessToken();
-    const driveUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+    const accessToken = await getValidAccessToken();
+    const driveUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
 
-    const requestHeaders: Record<string, string> = {};
-    if (token) {
-      requestHeaders['Authorization'] = `Bearer ${token}`;
+    const headers: Record<string, string> = {};
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
     const rangeHeader = req.headers.get('range');
     if (rangeHeader) {
-      requestHeaders['Range'] = rangeHeader;
+      headers['Range'] = rangeHeader;
     }
 
-    const driveRes = await fetch(driveUrl, {
-      headers: requestHeaders,
-    });
+    const driveRes = await fetch(driveUrl, { headers });
 
     if (!driveRes.ok) {
-      // Fallback: If not authorized or direct failed, redirect to Googleusercontent direct view
-      return NextResponse.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+      console.warn(`[DRIVE MEDIA] Drive responded with ${driveRes.status} for file ${fileId}`);
+      // If unauthorized or not found, try redirecting to Google thumbnail/direct URL as fallback
+      if (driveRes.status === 404 || driveRes.status === 403) {
+        return NextResponse.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+      }
+      return NextResponse.json({ error: 'Failed to fetch media from Drive' }, { status: driveRes.status });
     }
 
-    const responseHeaders = new Headers();
     const contentType = driveRes.headers.get('content-type') || 'application/octet-stream';
-    responseHeaders.set('Content-Type', contentType);
-    responseHeaders.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-    responseHeaders.set('Accept-Ranges', 'bytes');
-
     const contentLength = driveRes.headers.get('content-length');
-    if (contentLength) responseHeaders.set('Content-Length', contentLength);
-
     const contentRange = driveRes.headers.get('content-range');
-    if (contentRange) responseHeaders.set('Content-Range', contentRange);
+    const status = driveRes.status; // might be 200 or 206 Partial Content
 
-    return new Response(driveRes.body, {
-      status: driveRes.status,
-      headers: responseHeaders,
+    const resHeaders = new Headers();
+    resHeaders.set('Content-Type', contentType);
+    resHeaders.set('Accept-Ranges', 'bytes');
+    resHeaders.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+    if (contentLength) resHeaders.set('Content-Length', contentLength);
+    if (contentRange) resHeaders.set('Content-Range', contentRange);
+
+    return new NextResponse(driveRes.body, {
+      status,
+      headers: resHeaders,
     });
-  } catch (err: any) {
-    console.error('Error streaming Drive media:', err);
-    return NextResponse.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+  } catch (error: any) {
+    console.error('[DRIVE MEDIA] Error streaming file:', error);
+    return NextResponse.json({ error: 'Internal streaming error' }, { status: 500 });
   }
 }

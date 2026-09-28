@@ -1,21 +1,45 @@
 "use server";
+
 import fs from "fs";
 import path from "path";
-import { beats, YOUTUBE_LINKS } from "@/lib/data";
+import { beats, YOUTUBE_LINKS, INSTAGRAM_TRANSMISSIONS } from "@/lib/data";
 import { revalidatePath } from "next/cache";
+import { uploadToGoogleDrive, DriveFolderType } from "@/lib/google/drive";
+import {
+  readBeatsFromSheet,
+  writeAllBeatsToSheet,
+  readPortfolioFromSheet,
+  writeAllPortfolioToSheet,
+  readCctvFromSheet,
+  writeAllCctvToSheet,
+} from "@/lib/google/sheets";
+import { getAdminSession, getStoredTokens } from "@/lib/google/auth";
+import { GOOGLE_CONFIG } from "@/lib/google/config";
 
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
 
 function readDb() {
   if (!fs.existsSync(DB_PATH)) {
-    return { beats: [], videos: [], deletedIds: [], _isInitialized: false };
+    return {
+      beats: [],
+      videos: [],
+      instagramTransmissions: [],
+      deletedIds: [],
+      _isInitialized: false,
+    };
   }
   const data = fs.readFileSync(DB_PATH, "utf8");
   try {
     const parsed = JSON.parse(data);
     return parsed;
   } catch (e) {
-    return { beats: [], videos: [], deletedIds: [], _isInitialized: false };
+    return {
+      beats: [],
+      videos: [],
+      instagramTransmissions: [],
+      deletedIds: [],
+      _isInitialized: false,
+    };
   }
 }
 
@@ -39,13 +63,20 @@ export async function checkDbStatus() {
 export async function initializeDb() {
   let db = readDb();
   if (!fs.existsSync(DB_PATH)) {
-    db = { beats: [], videos: [], deletedIds: [], _isInitialized: true };
+    db = {
+      beats: [],
+      videos: [],
+      instagramTransmissions: [],
+      deletedIds: [],
+      _isInitialized: true,
+    };
   }
 
   db._isInitialized = true;
   if (!db.deletedIds) db.deletedIds = [];
   if (!db.beats) db.beats = [];
   if (!db.videos) db.videos = [];
+  if (!db.instagramTransmissions) db.instagramTransmissions = [];
 
   // Seed missing beats
   for (const b of beats) {
@@ -68,64 +99,203 @@ export async function initializeDb() {
     }
   }
 
+  // Seed missing transmissions
+  for (const tx of INSTAGRAM_TRANSMISSIONS) {
+    if (
+      !db.instagramTransmissions.find((x: any) => x.id === tx.id) &&
+      !db.deletedIds.includes(tx.id)
+    ) {
+      db.instagramTransmissions.push(tx);
+    }
+  }
+
   writeDb(db);
+
+  // Attempt initial sync to Google Sheet if Google OAuth is ready
+  try {
+    const tokens = getStoredTokens();
+    if (tokens?.access_token) {
+      await writeAllBeatsToSheet(db.beats);
+      await writeAllPortfolioToSheet(db.videos);
+      await writeAllCctvToSheet(db.instagramTransmissions);
+    }
+  } catch (err) {
+    console.warn("Could not sync to Google Sheet during initializeDb:", err);
+  }
+
   return db;
 }
 
-export async function uploadFile(formData: FormData) {
+/**
+ * Upload a file to Google Drive with automatic folder routing:
+ * - AUDIO folder (1E3no0R-HSGpK_ihIaDMzLutTs3HwD02s) for audio
+ * - COVERS folder (1b1T6joDt1c9wxhexUc31n1YI_DdebzOm) for covers
+ * - MEDIA folder (1kaDYyeycE7jQkOjIV9xHQJaTCLWpXzqT) for CCTV/media
+ */
+export async function uploadFile(
+  formData: FormData,
+  folderTypeOverride?: DriveFolderType
+) {
   const file = formData.get("file") as File;
   if (!file) throw new Error("No file provided");
+
+  const explicitType = (formData.get("folderType") as DriveFolderType) || folderTypeOverride;
+
+  let folderType: DriveFolderType = "covers";
+  if (explicitType) {
+    folderType = explicitType;
+  } else if (
+    file.type.startsWith("audio/") ||
+    file.name.match(/\.(mp3|wav|ogg|flac|m4a|aac)$/i)
+  ) {
+    folderType = "audio";
+  } else if (
+    file.type.startsWith("video/") ||
+    file.name.match(/\.(mp4|mov|webm|avi)$/i)
+  ) {
+    folderType = "media";
+  } else {
+    folderType = "covers";
+  }
 
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
+  const result = await uploadToGoogleDrive(
+    buffer,
+    file.name,
+    file.type || "application/octet-stream",
+    folderType
+  );
 
-  // Create a safe, unique file name
-  const safeName = file.name.replace(/[^a-zA-Z0-9.\-]/g, "_");
-  const fileName = `${Date.now()}-${safeName}`;
-  const filePath = path.join(uploadDir, fileName);
-
-  fs.writeFileSync(filePath, buffer);
-
-  return `/uploads/${fileName}`;
+  return result.url;
 }
 
-// Beats
+// ==========================================
+// GOOGLE WORKSPACE STATUS & SYNC ACTIONS
+// ==========================================
+
+export async function getGoogleStatus() {
+  const session = await getAdminSession();
+  const tokens = getStoredTokens();
+
+  return {
+    isAuthenticated: Boolean(session?.isAuthenticated),
+    adminEmail: GOOGLE_CONFIG.ADMIN_EMAIL,
+    currentEmail: session?.email || null,
+    hasGoogleTokens: Boolean(tokens?.access_token),
+    hasRefreshToken: Boolean(tokens?.refresh_token),
+    sheetId: GOOGLE_CONFIG.SHEET_ID,
+    driveAudioFolderId: GOOGLE_CONFIG.DRIVE_AUDIO_FOLDER_ID,
+    driveCoversFolderId: GOOGLE_CONFIG.DRIVE_COVERS_FOLDER_ID,
+    driveMediaFolderId: GOOGLE_CONFIG.DRIVE_MEDIA_FOLDER_ID,
+    redirectUri: GOOGLE_CONFIG.REDIRECT_URI,
+    lastTokenUpdate: tokens?.updated_at || null,
+  };
+}
+
+export async function syncWithGoogleSheet() {
+  const tokens = getStoredTokens();
+  if (!tokens?.access_token) {
+    throw new Error("Google OAuth not connected. Please log in with AMITDIED69@gmail.com first.");
+  }
+
+  const db = readDb();
+  let syncedFromSheet = false;
+
+  try {
+    // 1. Try reading from Google Sheet
+    const sheetBeats = await readBeatsFromSheet();
+    const sheetVideos = await readPortfolioFromSheet();
+    const sheetCctv = await readCctvFromSheet();
+
+    let updated = false;
+
+    if (Array.isArray(sheetBeats) && sheetBeats.length > 0) {
+      db.beats = sheetBeats;
+      updated = true;
+      syncedFromSheet = true;
+    } else if (Array.isArray(db.beats) && db.beats.length > 0) {
+      // Sheet is empty, push DB beats to sheet
+      await writeAllBeatsToSheet(db.beats);
+    }
+
+    if (Array.isArray(sheetVideos) && sheetVideos.length > 0) {
+      db.videos = sheetVideos;
+      updated = true;
+      syncedFromSheet = true;
+    } else if (Array.isArray(db.videos) && db.videos.length > 0) {
+      await writeAllPortfolioToSheet(db.videos);
+    }
+
+    if (Array.isArray(sheetCctv) && sheetCctv.length > 0) {
+      db.instagramTransmissions = sheetCctv;
+      updated = true;
+      syncedFromSheet = true;
+    } else if (Array.isArray(db.instagramTransmissions) && db.instagramTransmissions.length > 0) {
+      await writeAllCctvToSheet(db.instagramTransmissions);
+    }
+
+    if (updated) {
+      writeDb(db);
+    }
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+
+    return {
+      success: true,
+      message: syncedFromSheet
+        ? "Successfully synced latest data from Google Sheet!"
+        : "Google Sheet was empty; successfully pushed current data to Google Sheet!",
+      beatsCount: db.beats.length,
+      videosCount: db.videos.length,
+      cctvCount: (db.instagramTransmissions || []).length,
+    };
+  } catch (error: any) {
+    console.error("Failed to sync with Google Sheet:", error);
+    throw new Error(error.message || "Failed to sync with Google Sheet");
+  }
+}
+
+// ==========================================
+// BEATS MANAGEMENT
+// ==========================================
 
 export async function getCustomBeats() {
   const db = readDb();
+
+  // If tokens exist, attempt to fetch fresh from Google Sheet in background
+  try {
+    const tokens = getStoredTokens();
+    if (tokens?.access_token) {
+      const sheetBeats = await readBeatsFromSheet();
+      if (Array.isArray(sheetBeats) && sheetBeats.length > 0) {
+        db.beats = sheetBeats;
+        writeDb(db);
+        return sheetBeats;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not read beats from Google Sheet, using local DB:", e);
+  }
+
   return db.beats || [];
 }
 
 export async function addBeat(beat: any) {
   const db = readDb();
 
-  // ensure we only save simple strings/numbers, ignore object references like File, Event, etc.
   const safeCoverUrl =
     typeof beat.coverUrl === "string" && beat.coverUrl.trim() !== ""
       ? beat.coverUrl
       : "/placeholder-cover.png";
   const safeAudioUrl = typeof beat.audioUrl === "string" ? beat.audioUrl : "";
 
-  console.log(
-    "Saving beat with coverUrl type:",
-    typeof safeCoverUrl,
-    typeof beat.coverUrl,
-  );
-  console.log(
-    "Saving beat with audioUrl type:",
-    typeof safeAudioUrl,
-    typeof beat.audioUrl,
-  );
-
   const newBeat = {
     id: "custom-" + Date.now().toString(),
     title: String(beat.title || "Untitled"),
-    producer: String(beat.producer || ""),
+    producer: String(beat.producer || "AMITDIED"),
     bpm: Number(beat.bpm) || 120,
     key: String(beat.key || ""),
     genre: String(beat.genre || ""),
@@ -142,14 +312,16 @@ export async function addBeat(beat: any) {
           : [],
   };
 
-  try {
-    JSON.stringify(newBeat); // verify serializability
-  } catch (e) {
-    throw new Error("Beat data is not serializable: " + String(e));
-  }
-
   db.beats.push(newBeat);
   writeDb(db);
+
+  // Sync with Google Sheet BEATS tab
+  try {
+    await writeAllBeatsToSheet(db.beats);
+  } catch (e) {
+    console.warn("Failed to sync new beat to Google Sheet:", e);
+  }
+
   revalidatePath("/");
   revalidatePath("/admin");
   return newBeat;
@@ -194,6 +366,14 @@ export async function updateBeat(id: string, updatedData: any) {
 
   db.beats[index] = updatedBeat;
   writeDb(db);
+
+  // Sync to Google Sheet BEATS tab
+  try {
+    await writeAllBeatsToSheet(db.beats);
+  } catch (e) {
+    console.warn("Failed to sync updated beat to Google Sheet:", e);
+  }
+
   revalidatePath("/");
   revalidatePath("/admin");
   return updatedBeat;
@@ -205,14 +385,39 @@ export async function deleteBeat(id: string) {
   if (!db.deletedIds) db.deletedIds = [];
   if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
   writeDb(db);
+
+  // Sync to Google Sheet BEATS tab
+  try {
+    await writeAllBeatsToSheet(db.beats);
+  } catch (e) {
+    console.warn("Failed to sync beat deletion to Google Sheet:", e);
+  }
+
   revalidatePath("/");
   revalidatePath("/admin");
 }
 
-// Videos
+// ==========================================
+// PORTFOLIO / VIDEOS MANAGEMENT
+// ==========================================
 
 export async function getCustomVideos() {
   const db = readDb();
+
+  try {
+    const tokens = getStoredTokens();
+    if (tokens?.access_token) {
+      const sheetVideos = await readPortfolioFromSheet();
+      if (Array.isArray(sheetVideos) && sheetVideos.length > 0) {
+        db.videos = sheetVideos;
+        writeDb(db);
+        return sheetVideos;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not read videos from Google Sheet, using local DB:", e);
+  }
+
   return db.videos || [];
 }
 
@@ -226,6 +431,14 @@ export async function addVideo(videoData: any) {
   };
   db.videos.push(newVideo);
   writeDb(db);
+
+  // Sync to Google Sheet PORTFOLIO tab
+  try {
+    await writeAllPortfolioToSheet(db.videos);
+  } catch (e) {
+    console.warn("Failed to sync new video to Google Sheet:", e);
+  }
+
   revalidatePath("/");
   revalidatePath("/admin");
   return newVideo;
@@ -248,6 +461,14 @@ export async function updateVideo(id: string, updatedData: any) {
 
   db.videos[index] = updatedVideo;
   writeDb(db);
+
+  // Sync to Google Sheet PORTFOLIO tab
+  try {
+    await writeAllPortfolioToSheet(db.videos);
+  } catch (e) {
+    console.warn("Failed to sync updated video to Google Sheet:", e);
+  }
+
   revalidatePath("/");
   revalidatePath("/admin");
   return updatedVideo;
@@ -259,23 +480,48 @@ export async function deleteVideo(id: string) {
   if (!db.deletedIds) db.deletedIds = [];
   if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
   writeDb(db);
+
+  // Sync to Google Sheet PORTFOLIO tab
+  try {
+    await writeAllPortfolioToSheet(db.videos);
+  } catch (e) {
+    console.warn("Failed to sync video deletion to Google Sheet:", e);
+  }
+
   revalidatePath("/");
   revalidatePath("/admin");
 }
 
+// ==========================================
+// CCTV / INSTAGRAM TRANSMISSIONS MANAGEMENT
+// ==========================================
+
 export async function getCustomTransmissions() {
   const db = readDb();
+
+  try {
+    const tokens = getStoredTokens();
+    if (tokens?.access_token) {
+      const sheetCctv = await readCctvFromSheet();
+      if (Array.isArray(sheetCctv) && sheetCctv.length > 0) {
+        db.instagramTransmissions = sheetCctv;
+        writeDb(db);
+        return sheetCctv;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not read transmissions from Google Sheet:", e);
+  }
+
   if (Array.isArray(db.instagramTransmissions) && db.instagramTransmissions.length > 0) {
     return db.instagramTransmissions;
   }
-  const { INSTAGRAM_TRANSMISSIONS } = await import("@/lib/data");
   return INSTAGRAM_TRANSMISSIONS;
 }
 
 export async function addTransmission(data: any) {
   const db = readDb();
   if (!Array.isArray(db.instagramTransmissions)) {
-    const { INSTAGRAM_TRANSMISSIONS } = await import("@/lib/data");
     db.instagramTransmissions = [...INSTAGRAM_TRANSMISSIONS];
   }
   const newTx = {
@@ -287,12 +533,25 @@ export async function addTransmission(data: any) {
     likes: Number(data.likes) || 100,
     comments: Number(data.comments) || 12,
     postUrl: String(data.postUrl || "https://www.instagram.com/amitdied/"),
-    imageUrl: String(data.imageUrl || "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1000&auto=format&fit=crop"),
-    videoSnippetTitle: data.videoSnippetTitle ? String(data.videoSnippetTitle) : "TRANSMISSION_RAW.WAV",
+    imageUrl: String(
+      data.imageUrl ||
+        "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1000&auto=format&fit=crop"
+    ),
+    videoSnippetTitle: data.videoSnippetTitle
+      ? String(data.videoSnippetTitle)
+      : "TRANSMISSION_RAW.WAV",
     tags: Array.isArray(data.tags) ? data.tags : ["#amitdied", "#darktrap"],
   };
   db.instagramTransmissions.unshift(newTx);
   writeDb(db);
+
+  // Sync to Google Sheet CCTV tab
+  try {
+    await writeAllCctvToSheet(db.instagramTransmissions);
+  } catch (e) {
+    console.warn("Failed to sync new transmission to Google Sheet:", e);
+  }
+
   revalidatePath("/");
   revalidatePath("/admin");
   return newTx;
@@ -301,8 +560,17 @@ export async function addTransmission(data: any) {
 export async function deleteTransmission(id: string) {
   const db = readDb();
   if (Array.isArray(db.instagramTransmissions)) {
-    db.instagramTransmissions = db.instagramTransmissions.filter((t: any) => t.id !== id);
+    db.instagramTransmissions = db.instagramTransmissions.filter(
+      (t: any) => t.id !== id
+    );
     writeDb(db);
+
+    // Sync to Google Sheet CCTV tab
+    try {
+      await writeAllCctvToSheet(db.instagramTransmissions);
+    } catch (e) {
+      console.warn("Failed to sync transmission deletion to Google Sheet:", e);
+    }
   }
   revalidatePath("/");
   revalidatePath("/admin");

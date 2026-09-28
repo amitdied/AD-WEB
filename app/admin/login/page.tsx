@@ -1,83 +1,133 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { login } from '../actions';
-import { Lock, Eye, EyeOff, ArrowLeft, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Lock, CheckCircle2, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import Link from 'next/link';
-import { Suspense } from 'react';
 
 function LoginContent() {
-  const [state, formAction, isPending] = useActionState(login, { error: '' as string });
-  const [showPassword, setShowPassword] = useState(false);
-  const [showDevLogin, setShowDevLogin] = useState(false);
   const searchParams = useSearchParams();
-  const errorParam = searchParams.get('error');
+  const error = searchParams.get('error');
   const attemptedEmail = searchParams.get('attempted');
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
+  const handleGoogleLogin = () => {
+    setIsRedirecting(true);
+    window.location.href = '/api/auth/google/start';
+  };
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex items-center justify-center p-4 relative font-sans">
+    <div className="min-h-screen bg-black text-zinc-100 flex items-center justify-center p-4 relative selection:bg-red-500/30">
       <div className="absolute top-6 left-6">
         <Link
           href="/"
           className="flex items-center gap-2 text-xs uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Site</span>
+          <span>Back to Store</span>
         </Link>
       </div>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-xl p-6 sm:p-8 shadow-2xl relative"
+        className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden"
       >
-        <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 bg-red-950/40 border border-red-800/80 rounded-full flex items-center justify-center mb-3">
-            <Lock className="w-6 h-6 text-red-500" />
+        {/* Glow accent */}
+        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col items-center mb-8 relative z-10 text-center">
+          <div className="w-14 h-14 bg-zinc-900 rounded-2xl flex items-center justify-center mb-4 border border-zinc-800 shadow-inner">
+            <Lock className="w-7 h-7 text-red-500" />
           </div>
-          <h1 className="text-2xl font-display font-black tracking-tight text-white uppercase">
-            AMITDIED ADMIN
+          <h1 className="text-2xl font-display font-bold tracking-tight">
+            AMITDIED <span className="text-red-500">ADMIN</span>
           </h1>
-          <p className="text-zinc-400 text-xs mt-1 text-center font-mono">
-            RESTRICTED CONTENT CONTROL SYSTEM
+          <p className="text-zinc-400 text-xs mt-2 max-w-xs leading-relaxed">
+            Restricted administrative system. Sign in with your authorized Google Account to manage beats, Drive assets, and Sheets database.
           </p>
         </div>
 
-        {/* Error notification banner */}
-        {errorParam && (
-          <div className="mb-6 p-3.5 bg-red-950/50 border border-red-800/80 rounded-lg text-xs font-mono text-red-300 flex items-start gap-2.5">
-            <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              {errorParam === 'unauthorized' ? (
-                <>
-                  <p className="font-bold text-white">ACCESS DENIED</p>
-                  <p className="text-red-400 mt-0.5">
-                    Account {attemptedEmail ? `(${attemptedEmail})` : ''} is not authorized. Only the configured admin Google email has access.
-                  </p>
-                </>
-              ) : errorParam === 'not_configured' ? (
-                <>
-                  <p className="font-bold text-white">OAUTH NOT CONFIGURED</p>
-                  <p className="text-red-400 mt-0.5">
-                    Google OAuth client credentials are not yet set in environment. Use developer login below to access configuration setup.
-                  </p>
-                </>
-              ) : (
-                <p>{errorParam}</p>
-              )}
+        {/* Error Notifications */}
+        {error === 'unauthorized_account' && (
+          <div className="mb-6 p-4 rounded-xl bg-red-950/40 border border-red-800/80 text-left space-y-2">
+            <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider">
+              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+              <span>Access Denied (403)</span>
             </div>
+            <p className="text-xs text-red-300/90 leading-relaxed">
+              The Google account{' '}
+              {attemptedEmail ? (
+                <strong className="text-white font-mono bg-red-900/60 px-1 py-0.5 rounded">
+                  {attemptedEmail}
+                </strong>
+              ) : (
+                'you selected'
+              )}{' '}
+              is not authorized. Only{' '}
+              <strong className="text-white font-mono bg-red-900/60 px-1 py-0.5 rounded">
+                AMITDIED69@gmail.com
+              </strong>{' '}
+              is permitted to access this portal.
+            </p>
           </div>
         )}
 
-        {/* Google OAuth Button */}
-        <div className="space-y-4">
-          <a
-            href="/api/auth/google/login"
-            className="w-full flex items-center justify-center gap-3 bg-white hover:bg-zinc-100 text-zinc-900 font-semibold py-3 px-4 rounded-lg transition-all shadow-md active:scale-98"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
+        {error === 'csrf_validation_failed' && (
+          <div className="mb-6 p-4 rounded-xl bg-yellow-950/40 border border-yellow-800/80 text-left space-y-1">
+            <div className="flex items-center gap-2 text-yellow-400 font-bold text-xs uppercase tracking-wider">
+              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+              <span>Security Validation Failed</span>
+            </div>
+            <p className="text-xs text-yellow-300/80">
+              The OAuth state session expired or failed CSRF verification. Please initiate sign in again.
+            </p>
+          </div>
+        )}
+
+        {error && error !== 'unauthorized_account' && error !== 'csrf_validation_failed' && (
+          <div className="mb-6 p-4 rounded-xl bg-red-950/30 border border-red-900/60 text-left space-y-1">
+            <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider">
+              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+              <span>Authentication Error</span>
+            </div>
+            <p className="text-xs text-red-300/80">
+              {error === 'access_denied'
+                ? 'Sign in was cancelled or permissions were denied.'
+                : 'Authentication failed. Please verify your connection and try again.'}
+            </p>
+          </div>
+        )}
+
+        {/* Security Policy Badge */}
+        <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3 mb-6 font-mono text-[11px] text-zinc-400 space-y-1.5">
+          <div className="flex items-center justify-between text-zinc-500 uppercase tracking-wider text-[10px]">
+            <span>Security Policy</span>
+            <span className="text-emerald-500 flex items-center gap-1 font-semibold">
+              <CheckCircle2 className="w-3 h-3" />
+              STRICT OAuth
+            </span>
+          </div>
+          <div className="text-zinc-300">
+            Authorized Email:{' '}
+            <span className="text-red-400 font-bold">AMITDIED69@gmail.com</span>
+          </div>
+          <div className="text-[10px] text-zinc-500">
+            Server-side token verification with HTTP-only session cookies
+          </div>
+        </div>
+
+        {/* Sign in with Google Button */}
+        <button
+          onClick={handleGoogleLogin}
+          disabled={isRedirecting}
+          className="w-full flex items-center justify-center gap-3 bg-white hover:bg-zinc-100 text-zinc-950 font-semibold py-3.5 px-4 rounded-xl transition-all shadow-lg hover:shadow-red-500/10 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed group"
+        >
+          {isRedirecting ? (
+            <div className="w-5 h-5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
               <path
                 fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -95,65 +145,18 @@ function LoginContent() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span>Sign in with Google</span>
-          </a>
-
-          <p className="text-[11px] font-mono text-zinc-500 text-center">
-            Private Admin Authorization • Google Drive & Sheets Access
-          </p>
-        </div>
-
-        {/* Developer Password Fallback Toggle */}
-        <div className="mt-8 pt-6 border-t border-zinc-900">
-          <button
-            type="button"
-            onClick={() => setShowDevLogin(!showDevLogin)}
-            className="text-[11px] font-mono text-zinc-500 hover:text-zinc-300 w-full text-center transition-colors underline underline-offset-4"
-          >
-            {showDevLogin ? 'Hide Password Fallback' : 'Developer / Emergency Password Login'}
-          </button>
-
-          {showDevLogin && (
-            <motion.form
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              action={formAction}
-              className="mt-4 space-y-4 font-mono text-xs"
-            >
-              <div>
-                <label className="block text-zinc-400 mb-1.5">Emergency Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    required
-                    placeholder="Enter password (default: admin)"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-white focus:outline-none focus:border-red-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
-                  >
-                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              {state?.error && (
-                <p className="text-red-400 text-[11px]">{state.error}</p>
-              )}
-
-              <button
-                type="submit"
-                disabled={isPending}
-                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2 rounded uppercase tracking-wider text-xs transition-colors"
-              >
-                {isPending ? 'Verifying...' : 'Sign In With Password'}
-              </button>
-            </motion.form>
           )}
-        </div>
+          <span className="text-sm font-bold tracking-tight">
+            {isRedirecting ? 'Connecting to Google...' : 'Sign in with Google'}
+          </span>
+          {!isRedirecting && (
+            <ArrowRight className="w-4 h-4 ml-auto text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
+          )}
+        </button>
+
+        <p className="text-[11px] text-zinc-500 text-center mt-6">
+          Only the authorized producer email may access this panel. All login attempts are cryptographically verified.
+        </p>
       </motion.div>
     </div>
   );
@@ -161,7 +164,13 @@ function LoginContent() {
 
 export default function AdminLoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black text-zinc-400 flex items-center justify-center font-mono text-xs">
+          Loading login portal...
+        </div>
+      }
+    >
       <LoginContent />
     </Suspense>
   );

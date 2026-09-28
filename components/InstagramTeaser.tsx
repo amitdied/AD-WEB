@@ -28,10 +28,6 @@ export interface AmitdiedInstagramPost {
   snippet: string;
   status: string;
   date: string;
-  mediaType?: 'youtube' | 'drive_video' | 'image' | string;
-  youtubeUrl?: string;
-  driveVideoUrl?: string;
-  thumbnailUrl?: string;
 }
 
 export const AMITDIED_INSTAGRAM_POSTS: AmitdiedInstagramPost[] = [
@@ -120,7 +116,6 @@ function CCTVMonitor({
   const [isHovered, setIsHovered] = useState(false);
   const [timeGlitch, setTimeGlitch] = useState('12:48:32.4');
   const [embedLoaded, setEmbedLoaded] = useState(false);
-  const [isPlayingMedia, setIsPlayingMedia] = useState(false);
   const embedContainerRef = useRef<HTMLDivElement>(null);
 
   // Live real-time CCTV timer clock
@@ -248,128 +243,55 @@ function CCTVMonitor({
             </div>
           </div>
 
-          {/* Lazy Load Monitor Media Content */}
+          {/* Lazy Load Official Instagram Embed Container */}
           {isInView ? (
             <div
               ref={embedContainerRef}
-              className="w-full h-full flex flex-col items-center justify-center relative z-0 min-h-[380px] sm:min-h-[420px]"
+              className="w-full h-full flex flex-col items-center justify-center p-3 sm:p-4 relative z-0"
             >
-              {post.mediaType === 'youtube' ? (
-                // YouTube BTS / Documentary Video
-                (() => {
-                  const rawUrl = post.youtubeUrl || post.url || '';
-                  const match = rawUrl.match(
-                    /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/
-                  );
-                  const ytId = match ? match[1] : rawUrl.split('v=')[1]?.split('&')[0] || rawUrl;
-                  const thumb = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
-
-                  if (isPlayingMedia) {
-                    return (
-                      <div className="w-full h-full absolute inset-0 bg-black">
-                        <iframe
-                          src={`https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1`}
-                          className="w-full h-full border-0"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="relative w-full h-full min-h-[380px] sm:min-h-[420px] flex items-center justify-center bg-black overflow-hidden group/yt cursor-pointer" onClick={() => setIsPlayingMedia(true)}>
-                      <img src={thumb} alt={post.captionTitle} className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover/yt:opacity-100 transition-opacity" />
-                      <div className="relative z-10 flex flex-col items-center gap-2">
-                        <div className="w-14 h-14 rounded-full bg-red-600/90 border border-red-500 flex items-center justify-center text-white shadow-[0_0_25px_rgba(220,38,38,0.7)] group-hover/yt:scale-110 transition-transform">
-                          <Play className="w-6 h-6 ml-1 fill-white" />
-                        </div>
-                        <span className="bg-black/80 backdrop-blur-md px-3 py-1 border border-zinc-800 text-[10px] font-mono text-zinc-300 uppercase tracking-widest">
-                          INITIALIZE STREAM
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()
-              ) : post.mediaType === 'drive_video' ? (
-                // Google Drive Video
-                isPlayingMedia ? (
-                  <div className="w-full h-full absolute inset-0 bg-black flex items-center justify-center">
-                    <video
-                      src={post.driveVideoUrl || `/api/drive/media?fileId=${post.id}`}
-                      controls
-                      autoPlay
-                      className="w-full h-full object-contain"
-                    />
+              {/* Official Instagram Blockquote Embed Tag */}
+              <blockquote
+                className="instagram-media w-full"
+                data-instgrm-permalink={post.url}
+                data-instgrm-version="14"
+                style={{
+                  background: '#000',
+                  border: '1px solid #27272a',
+                  borderRadius: '0px',
+                  boxShadow: 'none',
+                  margin: '0 auto',
+                  maxWidth: '540px',
+                  minWidth: '280px',
+                  padding: '0',
+                  width: '100%',
+                }}
+              >
+                {/* Fallback & Loading Card within the CCTV Monitor */}
+                <div className="p-6 text-center font-mono flex flex-col items-center justify-center space-y-4 my-auto">
+                  <div className="w-12 h-12 rounded-full border border-red-600/60 bg-red-950/30 flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.3)]">
+                    <Instagram className="w-6 h-6 text-pink-500" />
                   </div>
-                ) : (
-                  <div className="relative w-full h-full min-h-[380px] sm:min-h-[420px] flex items-center justify-center bg-zinc-950 cursor-pointer group/vid" onClick={() => setIsPlayingMedia(true)}>
-                    {post.thumbnailUrl && (
-                      <img src={post.thumbnailUrl} alt={post.captionTitle} className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                    )}
-                    <div className="relative z-10 flex flex-col items-center gap-2">
-                      <div className="w-14 h-14 rounded-full bg-red-600/90 border border-red-500 flex items-center justify-center text-white shadow-[0_0_25px_rgba(220,38,38,0.7)] group-hover/vid:scale-110 transition-transform">
-                        <Play className="w-6 h-6 ml-1 fill-white" />
-                      </div>
-                      <span className="bg-black/80 backdrop-blur-md px-3 py-1 border border-zinc-800 text-[10px] font-mono text-zinc-300 uppercase tracking-widest">
-                        STREAM DRIVE ARCHIVE
-                      </span>
+
+                  <div className="space-y-1">
+                    <div className="text-white text-xs font-bold uppercase tracking-wider">
+                      {post.captionTitle}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 max-w-xs leading-relaxed">
+                      {post.snippet}
                     </div>
                   </div>
-                )
-              ) : post.mediaType === 'image' ? (
-                // Drive Surveillance Photo
-                <div className="relative w-full h-full min-h-[380px] sm:min-h-[420px] bg-black">
-                  <img
-                    src={post.thumbnailUrl || post.driveVideoUrl || post.url}
-                    alt={post.captionTitle}
-                    className="w-full h-full object-cover"
-                  />
+
+                  <a
+                    href={post.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-mono text-[11px] font-bold uppercase tracking-[0.2em] px-4 py-2.5 transition-transform hover:scale-105 shadow-[0_0_20px_rgba(220,38,38,0.5)]"
+                  >
+                    <span>VIEW ON INSTAGRAM</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </a>
                 </div>
-              ) : (
-                // Official Instagram Blockquote Embed Tag
-                <blockquote
-                  className="instagram-media w-full"
-                  data-instgrm-permalink={post.url}
-                  data-instgrm-version="14"
-                  style={{
-                    background: '#000',
-                    border: '1px solid #27272a',
-                    borderRadius: '0px',
-                    boxShadow: 'none',
-                    margin: '0 auto',
-                    maxWidth: '540px',
-                    minWidth: '280px',
-                    padding: '0',
-                    width: '100%',
-                  }}
-                >
-                  <div className="p-6 text-center font-mono flex flex-col items-center justify-center space-y-4 my-auto">
-                    <div className="w-12 h-12 rounded-full border border-red-600/60 bg-red-950/30 flex items-center justify-center shadow-[0_0_20px_rgba(220,38,38,0.3)]">
-                      <Instagram className="w-6 h-6 text-pink-500" />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-white text-xs font-bold uppercase tracking-wider">
-                        {post.captionTitle}
-                      </div>
-                      <div className="text-[11px] text-zinc-400 max-w-xs leading-relaxed">
-                        {post.snippet}
-                      </div>
-                    </div>
-
-                    <a
-                      href={post.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-mono text-[11px] font-bold uppercase tracking-[0.2em] px-4 py-2.5 transition-transform hover:scale-105 shadow-[0_0_20px_rgba(220,38,38,0.5)]"
-                    >
-                      <span>VIEW ON INSTAGRAM</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                </blockquote>
-              )}
+              </blockquote>
             </div>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-950 text-zinc-600 font-mono text-[10px] space-y-2">
@@ -423,24 +345,6 @@ function CCTVMonitor({
 }
 
 export function InstagramTeaser() {
-  const [posts, setPosts] = useState<AmitdiedInstagramPost[]>(AMITDIED_INSTAGRAM_POSTS);
-
-  useEffect(() => {
-    fetch('/api/cctv')
-      .then((res) => {
-        if (!res.ok) throw new Error('Network response not ok');
-        return res.json();
-      })
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setPosts(data);
-        }
-      })
-      .catch((err) => {
-        console.warn('Failed to load CCTV from API, using fallback:', err);
-      });
-  }, []);
-
   // Load official Instagram embed script once asynchronously
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -535,7 +439,7 @@ export function InstagramTeaser() {
 
         {/* Security Surveillance Monitors Grid: 1 col on mobile, 2 on tablet, 3 on desktop */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-          {posts.map((post, idx) => (
+          {AMITDIED_INSTAGRAM_POSTS.map((post, idx) => (
             <CCTVMonitor key={post.id || idx} post={post} index={idx} />
           ))}
         </div>

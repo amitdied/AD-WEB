@@ -1,149 +1,107 @@
 'use client';
 
-import React, { useState } from 'react';
+import { motion, useScroll, useMotionValueEvent } from 'motion/react';
 import Link from 'next/link';
-import { Volume2, Disc, Shield, Mail, ShoppingBag, Menu, X, ExternalLink } from 'lucide-react';
-import { useAudio } from '@/lib/AudioContext';
+import { useState } from 'react';
+import { Menu, X, Lock } from 'lucide-react';
 
 export function Header() {
-  const { isPlaying, currentBeat, togglePlay } = useAudio();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { scrollY } = useScroll();
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    setIsScrolled(latest > 100);
+  });
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-zinc-800/80 bg-black/80 backdrop-blur-xl transition-all">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
-        
-        {/* Brand / Logo */}
-        <Link href="/" className="flex items-center gap-3 group">
-          <div className="relative w-9 h-9 rounded-lg bg-gradient-to-br from-red-600 to-zinc-900 flex items-center justify-center border border-red-500/30 group-hover:border-red-500 transition-colors">
-            <span className="text-white font-black tracking-tighter text-lg font-mono">A†</span>
-            {isPlaying && (
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-              </span>
-            )}
-          </div>
-          <div>
-            <span className="font-display font-black text-xl tracking-wider text-white group-hover:text-red-500 transition-colors">
-              AMITDIED
-            </span>
-            <span className="hidden sm:inline-block ml-2 text-[10px] font-mono tracking-widest uppercase px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800">
-              SOUND LAB // 2026
-            </span>
-          </div>
-        </Link>
-
-        {/* Live Audio Indicator Pill */}
-        {currentBeat && (
-          <button
-            onClick={togglePlay}
-            className="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 hover:border-red-500/50 transition-all text-xs"
-          >
-            <div className="flex items-center gap-0.5 h-3">
-              <span className={`w-0.5 bg-red-500 rounded-full transition-all ${isPlaying ? 'h-3 animate-pulse' : 'h-1'}`}></span>
-              <span className={`w-0.5 bg-red-500 rounded-full transition-all ${isPlaying ? 'h-4 animate-bounce' : 'h-2'}`}></span>
-              <span className={`w-0.5 bg-red-500 rounded-full transition-all ${isPlaying ? 'h-2.5 animate-pulse' : 'h-1'}`}></span>
-            </div>
-            <span className="text-zinc-300 font-medium truncate max-w-[140px] font-mono">
-              {currentBeat.title}
-            </span>
-            <span className="text-zinc-500 text-[10px]">
-              {isPlaying ? 'PAUSE' : 'PLAY'}
-            </span>
-          </button>
-        )}
-
-        {/* Desktop Nav Links */}
-        <nav className="hidden lg:flex items-center gap-7 text-xs font-mono tracking-widest uppercase">
-          <a href="#beats" className="text-zinc-300 hover:text-red-500 transition-colors">
-            Beats Catalog
-          </a>
-          <a href="#licensing" className="text-zinc-300 hover:text-red-500 transition-colors">
-            Licenses
-          </a>
-          <a href="#credits" className="text-zinc-300 hover:text-red-500 transition-colors">
-            Portfolio
-          </a>
-          <a href="#contact" className="text-zinc-300 hover:text-red-500 transition-colors">
-            Inquiries
-          </a>
-          <Link href="/admin" className="text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1">
-            Admin
+    <>
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 border-b ${isScrolled ? 'bg-black/90 backdrop-blur-xl border-zinc-800/50 py-4' : 'bg-transparent border-transparent py-8 pointer-events-none'}`}>
+        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between pointer-events-auto">
+          
+          <Link href="/" className="font-display font-black text-2xl tracking-[0.2em] uppercase text-white hover:text-red-500 transition-colors flex items-center gap-3 relative z-50">
+            AMIT<span className="text-red-600">DIED</span>
+            <span className="text-[10px] bg-red-600/20 text-red-500 px-2 py-0.5 rounded-sm border border-red-500/30 hidden sm:block">SYS.1</span>
           </Link>
-        </nav>
-
-        {/* Action Button */}
-        <div className="flex items-center gap-3">
-          <a
-            href="#beats"
-            className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-lg shadow-red-900/20 hover:shadow-red-700/40"
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span>Browse Beats</span>
-          </a>
-
-          {/* Mobile menu toggle */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 rounded-lg bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800"
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile Menu Dropdown */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden border-b border-zinc-800 bg-zinc-950/95 backdrop-blur-xl px-4 py-6 space-y-4 font-mono text-sm tracking-widest uppercase">
-          <a
-            href="#beats"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-zinc-300 hover:text-red-500"
-          >
-            Beats Catalog
-          </a>
-          <a
-            href="#licensing"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-zinc-300 hover:text-red-500"
-          >
-            Licenses & Pricing
-          </a>
-          <a
-            href="#credits"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-zinc-300 hover:text-red-500"
-          >
-            Credits / Placements
-          </a>
-          <a
-            href="#contact"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-zinc-300 hover:text-red-500"
-          >
-            Custom Production & Contact
-          </a>
-          <Link
-            href="/admin"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-zinc-500 hover:text-zinc-200"
-          >
-            Admin Dashboard
-          </Link>
-          <div className="pt-2">
-            <a
-              href="#beats"
-              onClick={() => setMobileMenuOpen(false)}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-red-600 text-white font-bold tracking-wider"
+          
+          <nav className="hidden md:flex items-center gap-7 text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 relative z-50">
+            {['Store', 'Portfolio', 'About', 'Contact'].map((item) => (
+               <Link 
+                 key={item} 
+                 href={`/#${item.toLowerCase()}`}
+                 className="relative group hover:text-white transition-colors"
+               >
+                 {item}
+                 <span className="absolute -bottom-2 left-0 w-0 h-[2px] bg-red-600 transition-all duration-300 group-hover:w-full" />
+               </Link>
+            ))}
+            
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 text-zinc-500 hover:text-red-500 transition-colors border border-zinc-800/80 hover:border-red-600/50 px-2.5 py-1 rounded text-[10px] tracking-wider"
+              title="Admin Panel"
             >
-              <ShoppingBag className="w-4 h-4" />
-              <span>EXPLORE ALL BEATS</span>
-            </a>
-          </div>
+              <Lock className="w-3 h-3 text-red-500" />
+              <span>Admin</span>
+            </Link>
+          </nav>
+
+          <button 
+            className="md:hidden relative z-50 text-white"
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            {menuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
         </div>
-      )}
-    </header>
+      </header>
+
+      {/* Mobile Menu Fullscreen Overlay */}
+      <motion.div 
+         initial={false}
+         animate={{ 
+            clipPath: menuOpen ? "circle(150% at calc(100% - 2rem) 2rem)" : "circle(0% at calc(100% - 2rem) 2rem)"
+         }}
+         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+         className="fixed inset-0 z-40 bg-zinc-950 flex flex-col items-center justify-center"
+      >
+         {/* Noise overlay */}
+         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none" />
+         
+         <nav className="flex flex-col gap-6 text-center">
+            {['Store', 'Portfolio', 'About', 'Contact'].map((item, i) => (
+               <motion.div
+                  key={item}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : 20 }}
+                  transition={{ duration: 0.5, delay: menuOpen ? 0.2 + (i * 0.1) : 0 }}
+               >
+                  <Link 
+                     href={`/#${item.toLowerCase()}`}
+                     onClick={() => setMenuOpen(false)}
+                     className="font-display font-black text-4xl sm:text-5xl uppercase tracking-tighter hover:text-red-500 transition-colors"
+                  >
+                     {item}
+                  </Link>
+               </motion.div>
+            ))}
+
+            <motion.div
+               initial={{ opacity: 0, y: 20 }}
+               animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : 20 }}
+               transition={{ duration: 0.5, delay: 0.7 }}
+               className="pt-2"
+            >
+               <Link 
+                  href="/admin"
+                  onClick={() => setMenuOpen(false)}
+                  className="inline-flex items-center gap-2 text-sm uppercase font-mono tracking-widest text-zinc-500 hover:text-red-500 transition-colors border border-zinc-800 px-4 py-2 rounded-full"
+               >
+                  <Lock className="w-3.5 h-3.5 text-red-500" />
+                  <span>Admin Portal</span>
+               </Link>
+            </motion.div>
+         </nav>
+      </motion.div>
+    </>
   );
 }

@@ -1,22 +1,17 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { getCustomTransmissions } from '@/app/admin/data-actions';
 import { INSTAGRAM_TRANSMISSIONS } from '@/lib/data';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const dbPath = path.join(process.cwd(), 'data', 'db.json');
-    if (fs.existsSync(dbPath)) {
-      const content = fs.readFileSync(dbPath, 'utf8');
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed?.instagramTransmissions) && parsed.instagramTransmissions.length > 0) {
-        return NextResponse.json(parsed.instagramTransmissions);
-      }
+    const list = await getCustomTransmissions();
+    if (Array.isArray(list) && list.length > 0) {
+      return NextResponse.json(list);
     }
   } catch (error) {
-    console.error('Error reading Instagram transmissions from DB:', error);
+    console.error('Error reading Instagram transmissions:', error);
   }
 
   return NextResponse.json(INSTAGRAM_TRANSMISSIONS);

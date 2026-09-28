@@ -1,26 +1,20 @@
 <div align="center">
-  <h1 align="center">AMITDIED // PRODUCTION BEAT STORE & WORKSPACE BACKEND</h1>
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>
 
-## Google Workspace Architecture
+# Run and deploy your AI Studio app
 
-```
-AMITDIED LIVE WEBSITE
-        ↓
-PRIVATE ADMIN (/admin/beats)
-        ↓
-GOOGLE OAUTH (ADMIN_GOOGLE_EMAIL)
-        ↓
-ADMIN BEAT UPLOAD (/api/admin/beats/upload)
-        ↓
-GOOGLE DRIVE (AMITDIED BEATS/AUDIO & AMITDIED BEATS/COVERS)
-        ↓
-GOOGLE SHEETS ("BEATS" tab)
-        ↓
-LIVE BEAT STORE (/api/beats & audio streaming via /api/media/[fileId])
-```
+This contains everything you need to run your app locally.
 
-- **Audio & Artwork Storage**: Google Drive (`AMITDIED BEATS/AUDIO` & `AMITDIED BEATS/COVERS`).
-- **Beat Database**: Google Sheets (`BEATS` worksheet).
-- **Admin Authentication**: Google OAuth 2.0 restricted to `ADMIN_GOOGLE_EMAIL` (`amitdied69@gmail.com`).
-- **Live Sync**: Adding or editing beats directly updates Google Sheets and Google Drive, reflecting on the live Beat Store without Vercel redeployment.
+View your app in AI Studio: https://ai.studio/apps/dc9f7e49-8706-4047-809e-a52b3d7f40b9
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`

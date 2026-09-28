@@ -1,36 +1,54 @@
+'use client';
+import dynamic from 'next/dynamic';
+import { AudioProvider } from '@/lib/AudioContext';
 import { Header } from '@/components/Header';
 import { Hero } from '@/components/Hero';
-import { CctvFeed } from '@/components/CctvFeed';
 import { BeatStore } from '@/components/BeatStore';
+import { StickyPlayer } from '@/components/StickyPlayer';
 import { Portfolio } from '@/components/Portfolio';
+import { InstagramTeaser } from '@/components/InstagramTeaser';
 import { Contact } from '@/components/Contact';
-import { Player } from '@/components/Player';
+import { IntroSequence } from '@/components/IntroSequence';
+import { ParallaxBackground } from '@/components/ParallaxBackground';
+import { OSBootProvider, useOSBoot } from '@/hooks/useOSBoot';
 
-export const dynamic = 'force-dynamic';
+const ScrollSequence = dynamic(
+  () => import('@/components/ScrollSequence').then((mod) => mod.ScrollSequence),
+  { ssr: false }
+);
+
+function AppContent() {
+  const { isBooted } = useOSBoot();
+
+  return (
+    <>
+      {!isBooted && <IntroSequence />}
+      
+      <main className={`min-h-screen pb-24 selection:bg-red-500/30 transition-opacity duration-1000 ${isBooted ? 'opacity-100' : 'opacity-0 h-screen overflow-hidden'}`}>
+        <ParallaxBackground />
+        {/* Global CRT scanline overlay */}
+        <div className="pointer-events-none fixed inset-0 z-[100] h-full w-full bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] opacity-20 mix-blend-overlay"></div>
+        
+        <Header />
+        <Hero />
+        <ScrollSequence />
+        <BeatStore />
+        <Portfolio />
+        <InstagramTeaser />
+        <Contact />
+        <StickyPlayer />
+      </main>
+    </>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-red-600 selection:text-white pb-28 relative">
-      {/* Background cyber grid & ambient glows */}
-      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
-        <div 
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
-            backgroundSize: '48px 48px',
-          }}
-        />
-        <div className="absolute -top-40 left-1/4 w-[500px] h-[500px] bg-red-900/10 rounded-full blur-[140px]" />
-        <div className="absolute top-1/2 -right-40 w-[600px] h-[600px] bg-red-950/15 rounded-full blur-[160px]" />
-      </div>
-
-      <Header />
-      <Hero />
-      <CctvFeed />
-      <BeatStore />
-      <Portfolio />
-      <Contact />
-      <Player />
-    </div>
+    <OSBootProvider>
+      <AudioProvider>
+        <AppContent />
+      </AudioProvider>
+    </OSBootProvider>
   );
 }
+

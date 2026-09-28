@@ -1,4 +1,6 @@
 {
-  "name": "AMITDIED // Official Beat Store & Archive",
-  "description": "Exclusive instrumental catalog and music licenses by AMITDIED with Google Drive & Google Sheets backend."
+  "name": "Amitdied Beat Store",
+  "description": "A modern, dark-themed music producer portfolio and beat selling website.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

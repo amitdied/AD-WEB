@@ -1,7 +1,6 @@
-import type { Metadata } from 'next';
+import type {Metadata} from 'next';
 import { Inter, Space_Grotesk } from 'next/font/google';
-import './globals.css';
-import { AudioProvider } from '@/lib/AudioContext';
+import './globals.css'; // Global styles
 
 const inter = Inter({
   subsets: ['latin'],
@@ -14,17 +13,15 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'AMITDIED // Official Beat Store & Archive',
-  description: 'Official music production archive, beat store, and sound engineering portfolio of AMITDIED.',
+  title: 'AMITDIED | Dark Melodic Beats',
+  description: 'Music producer portfolio and beat selling platform for Amitdied.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} dark`}>
-      <body className="bg-black text-white font-sans antialiased selection:bg-red-600 selection:text-white min-h-screen">
-        <AudioProvider>
-          {children}
-        </AudioProvider>
+      <body className="bg-black text-zinc-100 font-sans antialiased selection:bg-red-900/50 selection:text-red-200" suppressHydrationWarning>
+        {children}
       </body>
     </html>
   );
