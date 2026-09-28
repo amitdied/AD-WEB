@@ -12,6 +12,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const baseAppUrl = process.env.APP_URL || 'https://amitdied.vercel.app';
+
   try {
     const { searchParams } = req.nextUrl;
     const errorParam = searchParams.get('error');
@@ -22,25 +24,25 @@ export async function GET(req: NextRequest) {
     if (!GOOGLE_CONFIG.CLIENT_ID) {
       console.error('[AUTH ERROR] Missing required environment variable: GOOGLE_CLIENT_ID');
       return NextResponse.redirect(
-        new URL('/admin/login?code=MISSING_ENV&detail=GOOGLE_CLIENT_ID', req.url)
+        new URL('/admin/login?code=MISSING_ENV&detail=GOOGLE_CLIENT_ID', baseAppUrl)
       );
     }
     if (!GOOGLE_CONFIG.CLIENT_SECRET) {
       console.error('[AUTH ERROR] Missing required environment variable: GOOGLE_CLIENT_SECRET');
       return NextResponse.redirect(
-        new URL('/admin/login?code=MISSING_ENV&detail=GOOGLE_CLIENT_SECRET', req.url)
+        new URL('/admin/login?code=MISSING_ENV&detail=GOOGLE_CLIENT_SECRET', baseAppUrl)
       );
     }
     if (!GOOGLE_CONFIG.REDIRECT_URI) {
       console.error('[AUTH ERROR] Missing required environment variable: GOOGLE_REDIRECT_URI');
       return NextResponse.redirect(
-        new URL('/admin/login?code=MISSING_ENV&detail=GOOGLE_REDIRECT_URI', req.url)
+        new URL('/admin/login?code=MISSING_ENV&detail=GOOGLE_REDIRECT_URI', baseAppUrl)
       );
     }
     if (!GOOGLE_CONFIG.ADMIN_EMAIL) {
       console.error('[AUTH ERROR] Missing required environment variable: ADMIN_GOOGLE_EMAIL');
       return NextResponse.redirect(
-        new URL('/admin/login?code=MISSING_ENV&detail=ADMIN_GOOGLE_EMAIL', req.url)
+        new URL('/admin/login?code=MISSING_ENV&detail=ADMIN_GOOGLE_EMAIL', baseAppUrl)
       );
     }
 
@@ -50,7 +52,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(
         new URL(
           `/admin/login?code=TOKEN_EXCHANGE_FAILED&detail=${encodeURIComponent(errorParam)}`,
-          req.url
+          baseAppUrl
         )
       );
     }
@@ -62,14 +64,14 @@ export async function GET(req: NextRequest) {
         '[AUTH ERROR] OAuth state verification failed or state cookie expired. Reason: STATE_MISMATCH'
       );
       return NextResponse.redirect(
-        new URL('/admin/login?code=STATE_MISMATCH', req.url)
+        new URL('/admin/login?code=STATE_MISMATCH', baseAppUrl)
       );
     }
 
     if (!code) {
       console.error('[AUTH ERROR] Authorization code missing from callback URL.');
       return NextResponse.redirect(
-        new URL('/admin/login?code=TOKEN_EXCHANGE_FAILED&detail=missing_code', req.url)
+        new URL('/admin/login?code=TOKEN_EXCHANGE_FAILED&detail=missing_code', baseAppUrl)
       );
     }
 
@@ -78,17 +80,21 @@ export async function GET(req: NextRequest) {
     try {
       tokens = await exchangeCodeForTokens(code, GOOGLE_CONFIG.REDIRECT_URI);
     } catch (tokenErr: any) {
-      const rawMessage = String(tokenErr.message || 'token_exchange_failed');
+      const rawMessage = String(tokenErr?.message || 'token_exchange_failed');
       console.error('[AUTH ERROR] Token exchange failed with Google:', rawMessage);
 
-      // Extract specific Google error code like invalid_grant, invalid_client, etc.
-      const match = rawMessage.match(/\b(invalid_grant|invalid_client|invalid_request|unauthorized_client|unsupported_grant_type|redirect_uri_mismatch)\b/i);
-      const safeErrorName = match ? match[1].toLowerCase() : rawMessage.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32);
+      // Extract specific Google error code like invalid_grant, invalid_client, redirect_uri_mismatch
+      const match = rawMessage.match(
+        /\b(invalid_grant|invalid_client|invalid_request|unauthorized_client|unsupported_grant_type|redirect_uri_mismatch)\b/i
+      );
+      const safeErrorName = match
+        ? match[1].toLowerCase()
+        : rawMessage.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32);
 
       return NextResponse.redirect(
         new URL(
           `/admin/login?code=TOKEN_EXCHANGE_FAILED&detail=${encodeURIComponent(safeErrorName)}`,
-          req.url
+          baseAppUrl
         )
       );
     }
@@ -98,9 +104,10 @@ export async function GET(req: NextRequest) {
     try {
       userInfo = await fetchGoogleUserInfo(tokens.access_token);
     } catch (userErr: any) {
-      console.error('[AUTH ERROR] Failed to fetch Google user profile info:', userErr.message || 'unknown error');
+      const userErrName = userErr?.name || 'userinfo_failed';
+      console.error('[AUTH ERROR] Failed to fetch Google user profile info:', userErrName, userErr?.message);
       return NextResponse.redirect(
-        new URL('/admin/login?code=TOKEN_EXCHANGE_FAILED&detail=userinfo_failed', req.url)
+        new URL(`/admin/login?code=TOKEN_EXCHANGE_FAILED&detail=${encodeURIComponent(userErrName)}`, baseAppUrl)
       );
     }
 
@@ -115,14 +122,14 @@ export async function GET(req: NextRequest) {
       const unauthResponse = NextResponse.redirect(
         new URL(
           `/admin/login?code=EMAIL_NOT_ALLOWED&detail=${encodeURIComponent(userInfo?.email || 'unknown')}`,
-          req.url
+          baseAppUrl
         )
       );
       unauthResponse.cookies.delete(STATE_COOKIE_NAME);
       return unauthResponse;
     }
 
-    // 7. Establish session and persist credentials securely server-side
+    // 7. Persist tokens (graceful fallback in read-only serverless filesystems)
     try {
       saveStoredTokens({
         ...tokens,
@@ -132,37 +139,61 @@ export async function GET(req: NextRequest) {
           picture: userInfo.picture,
         },
       });
+    } catch (storageErr: any) {
+      console.warn('[AUTH WARNING] Failed to persist tokens to disk:', storageErr?.message || storageErr);
+    }
 
-      const sessionToken = signSessionPayload({
+    // 8. Sign session token
+    let sessionToken: string;
+    try {
+      sessionToken = signSessionPayload({
         email: userInfo.email,
         name: userInfo.name || 'AMITDIED',
         picture: userInfo.picture || '',
         iat: Date.now(),
         exp: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
       });
-
-      const response = NextResponse.redirect(new URL('/admin', req.url));
-
-      response.cookies.set(SESSION_COOKIE_NAME, sessionToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 7 * 24 * 60 * 60, // 7 days
-      });
-
-      response.cookies.delete(STATE_COOKIE_NAME);
-      return response;
-    } catch (sessionErr: any) {
-      console.error('[AUTH ERROR] Session token creation or persistence failed:', sessionErr.message || 'unknown error');
+    } catch (signErr: any) {
+      const errName = signErr?.name || 'sign_session_failed';
+      console.error('[AUTH ERROR] Failed to sign session token:', errName, signErr?.message);
       return NextResponse.redirect(
-        new URL('/admin/login?code=SESSION_FAILED', req.url)
+        new URL(`/admin/login?code=SESSION_FAILED&detail=${encodeURIComponent(errName)}`, baseAppUrl)
       );
     }
+
+    // 9. Redirect directly to /admin using NextResponse.redirect and attach session cookie
+    const adminUrl = new URL('/admin', process.env.APP_URL || 'https://amitdied.vercel.app');
+    const response = NextResponse.redirect(adminUrl);
+
+    response.cookies.set(SESSION_COOKIE_NAME, sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+    });
+
+    response.cookies.delete(STATE_COOKIE_NAME);
+
+    return response;
   } catch (err: any) {
-    console.error('[AUTH ERROR] Unexpected exception during OAuth callback:', err.message || err);
+    // Re-throw if a framework redirect error was raised
+    if (err?.message === 'NEXT_REDIRECT' || err?.digest?.startsWith('NEXT_REDIRECT')) {
+      throw err;
+    }
+
+    const errName = err?.name || 'session_failed';
+    const errMessage = String(err?.message || '');
+    const safeErrorDetail = errName !== 'Error'
+      ? errName
+      : (errMessage.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32) || 'unknown_error');
+
+    console.error('[AUTH ERROR] Exception in OAuth callback route:', safeErrorDetail, errMessage);
     return NextResponse.redirect(
-      new URL('/admin/login?code=SESSION_FAILED', req.url)
+      new URL(
+        `/admin/login?code=SESSION_FAILED&detail=${encodeURIComponent(safeErrorDetail)}`,
+        process.env.APP_URL || 'https://amitdied.vercel.app'
+      )
     );
   }
 }
