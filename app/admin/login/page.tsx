@@ -8,14 +8,44 @@ import Link from 'next/link';
 
 function LoginContent() {
   const searchParams = useSearchParams();
-  const error = searchParams.get('error');
-  const attemptedEmail = searchParams.get('attempted');
+  const rawCode = searchParams.get('code') || searchParams.get('error');
+  const rawDetail = searchParams.get('detail') || searchParams.get('attempted') || searchParams.get('message');
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const handleGoogleLogin = () => {
     setIsRedirecting(true);
     window.location.href = '/api/auth/google/start';
   };
+
+  // Derive normalized short safe reason code and description
+  let errorCode: string | null = null;
+  let errorDescription: string | null = null;
+
+  if (rawCode) {
+    if (rawCode === 'MISSING_ENV') {
+      errorCode = 'MISSING_ENV';
+      errorDescription = `Required environment variable is not configured: ${rawDetail || 'CONFIG'}`;
+    } else if (rawCode === 'STATE_MISMATCH' || rawCode === 'csrf_validation_failed') {
+      errorCode = 'STATE_MISMATCH';
+      errorDescription = 'OAuth state/CSRF validation failed or login session expired. Please try signing in again.';
+    } else if (rawCode === 'TOKEN_EXCHANGE_FAILED' || rawCode === 'token_exchange_failed') {
+      errorCode = `TOKEN_EXCHANGE_FAILED${rawDetail ? ` (${rawDetail})` : ''}`;
+      errorDescription = rawDetail
+        ? `Google authorization error: ${rawDetail}. Verify client credentials and redirect URI.`
+        : 'Google token exchange could not be completed. Please try again.';
+    } else if (rawCode === 'EMAIL_NOT_ALLOWED' || rawCode === 'unauthorized_account') {
+      errorCode = 'EMAIL_NOT_ALLOWED';
+      errorDescription = `Account (${rawDetail || 'unauthorized'}) is not permitted. Only AMITDIED69@gmail.com may access the admin panel.`;
+    } else if (rawCode === 'SESSION_FAILED' || rawCode === 'callback_error') {
+      errorCode = 'SESSION_FAILED';
+      errorDescription = 'Could not create or persist the admin session. Please try logging in again.';
+    } else {
+      errorCode = String(rawCode).toUpperCase().slice(0, 30);
+      errorDescription = rawDetail
+        ? `${rawCode}: ${rawDetail}`
+        : `Authentication failed (${rawCode}). Please try again.`;
+    }
+  }
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 flex items-center justify-center p-4 relative selection:bg-red-500/30">
@@ -49,53 +79,20 @@ function LoginContent() {
           </p>
         </div>
 
-        {/* Error Notifications */}
-        {error === 'unauthorized_account' && (
+        {/* Dynamic Safe Reason Code Notification */}
+        {errorCode && (
           <div className="mb-6 p-4 rounded-xl bg-red-950/40 border border-red-800/80 text-left space-y-2">
-            <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider">
-              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-              <span>Access Denied (403)</span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-red-400 font-bold text-xs uppercase tracking-wider">
+                <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+                <span>Authentication Failure</span>
+              </div>
+              <span className="font-mono text-[10px] bg-red-900/60 text-red-200 border border-red-700/60 px-2 py-0.5 rounded font-bold uppercase tracking-wide">
+                {errorCode}
+              </span>
             </div>
-            <p className="text-xs text-red-300/90 leading-relaxed">
-              The Google account{' '}
-              {attemptedEmail ? (
-                <strong className="text-white font-mono bg-red-900/60 px-1 py-0.5 rounded">
-                  {attemptedEmail}
-                </strong>
-              ) : (
-                'you selected'
-              )}{' '}
-              is not authorized. Only{' '}
-              <strong className="text-white font-mono bg-red-900/60 px-1 py-0.5 rounded">
-                AMITDIED69@gmail.com
-              </strong>{' '}
-              is permitted to access this portal.
-            </p>
-          </div>
-        )}
-
-        {error === 'csrf_validation_failed' && (
-          <div className="mb-6 p-4 rounded-xl bg-yellow-950/40 border border-yellow-800/80 text-left space-y-1">
-            <div className="flex items-center gap-2 text-yellow-400 font-bold text-xs uppercase tracking-wider">
-              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-              <span>Security Validation Failed</span>
-            </div>
-            <p className="text-xs text-yellow-300/80">
-              The OAuth state session expired or failed CSRF verification. Please initiate sign in again.
-            </p>
-          </div>
-        )}
-
-        {error && error !== 'unauthorized_account' && error !== 'csrf_validation_failed' && (
-          <div className="mb-6 p-4 rounded-xl bg-red-950/30 border border-red-900/60 text-left space-y-1">
-            <div className="flex items-center gap-2 text-red-400 font-bold text-xs uppercase tracking-wider">
-              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-              <span>Authentication Error</span>
-            </div>
-            <p className="text-xs text-red-300/80">
-              {error === 'access_denied'
-                ? 'Sign in was cancelled or permissions were denied.'
-                : 'Authentication failed. Please verify your connection and try again.'}
+            <p className="text-xs text-red-300/90 leading-relaxed font-mono">
+              {errorDescription}
             </p>
           </div>
         )}
