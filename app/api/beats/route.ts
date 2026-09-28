@@ -1,18 +1,31 @@
 import { NextResponse } from 'next/server';
-import { getCustomBeats } from '@/app/admin/data-actions';
+import fs from 'fs';
+import path from 'path';
 import { beats as defaultBeats } from '@/lib/data';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const beatsList = await getCustomBeats();
-    if (Array.isArray(beatsList) && beatsList.length > 0) {
-      return NextResponse.json(beatsList);
+    const dbPath = path.join(process.cwd(), 'data', 'db.json');
+    if (fs.existsSync(dbPath)) {
+      const content = fs.readFileSync(dbPath, 'utf8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed?.beats) && parsed.beats.length > 0) {
+        return NextResponse.json(parsed.beats, {
+          headers: {
+            'Cache-Control': 'no-store, max-age=0',
+          },
+        });
+      }
     }
   } catch (error) {
-    console.error('Error in /api/beats:', error);
+    console.error('Error reading beats DB:', error);
   }
 
-  return NextResponse.json(defaultBeats);
+  return NextResponse.json(defaultBeats, {
+    headers: {
+      'Cache-Control': 'no-store, max-age=0',
+    },
+  });
 }

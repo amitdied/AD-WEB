@@ -23,20 +23,27 @@ export function BeatStore() {
   const [selectedBeatForLicense, setSelectedBeatForLicense] = useState<any | null>(null);
 
   useEffect(() => {
-    fetch("/api/beats")
-      .then((res) => {
-        if (!res.ok) throw new Error("Network error");
-        return res.json();
-      })
-      .then((customBeats) => {
-        if (Array.isArray(customBeats) && customBeats.length > 0) {
+    let isMounted = true;
+    const loadBeats = async (retry = 0) => {
+      try {
+        const res = await fetch("/api/beats", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        const customBeats = await res.json();
+        if (isMounted && Array.isArray(customBeats) && customBeats.length > 0) {
           setAllBeats(customBeats);
         }
-      })
-      .catch((err) => {
-        console.error("Failed to load beats from API, using fallback", err);
-        setAllBeats(hardcodedBeats);
-      });
+      } catch (err) {
+        if (retry < 2 && isMounted) {
+          setTimeout(() => loadBeats(retry + 1), 1000);
+        } else if (isMounted) {
+          setAllBeats(hardcodedBeats);
+        }
+      }
+    };
+    loadBeats();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Listen for global open-license-modal events (from StickyPlayer, etc.)

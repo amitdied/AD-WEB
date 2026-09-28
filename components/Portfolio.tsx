@@ -41,20 +41,26 @@ export function Portfolio() {
   const [zIndexCounter, setZIndexCounter] = useState(50);
 
   useEffect(() => {
-    const fetchVideos = async () => {
+    let isMounted = true;
+    const fetchVideos = async (retry = 0) => {
       try {
         let finalLinks = YOUTUBE_LINKS;
         try {
-          const res = await fetch("/api/videos");
+          const res = await fetch("/api/videos", { cache: "no-store" });
           if (res.ok) {
             const apiData = await res.json();
             if (Array.isArray(apiData) && apiData.length > 0) {
               finalLinks = apiData;
             }
           }
-        } catch (e) {
-          console.error("API read failed, using fallback", e);
+        } catch {
+          if (retry < 2 && isMounted) {
+            setTimeout(() => fetchVideos(retry + 1), 1000);
+            return;
+          }
         }
+
+        if (!isMounted) return;
 
         const data = await Promise.all(
           finalLinks.map(async (item: any) => {
@@ -109,6 +115,9 @@ export function Portfolio() {
       }
     };
     fetchVideos();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const openProject = (id: string) => {
