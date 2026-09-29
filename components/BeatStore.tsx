@@ -40,9 +40,22 @@ export function BeatStore() {
         }
       }
     };
+
     loadBeats();
+
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === "visible") {
+        loadBeats();
+      }
+    };
+
+    window.addEventListener("focus", handleFocusOrVisible);
+    document.addEventListener("visibilitychange", handleFocusOrVisible);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("focus", handleFocusOrVisible);
+      document.removeEventListener("visibilitychange", handleFocusOrVisible);
     };
   }, []);
 

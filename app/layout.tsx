@@ -1,5 +1,6 @@
 import type {Metadata} from 'next';
 import './globals.css'; // Global styles
+import CustomCursor from "@/components/CustomCursor";
 
 export const metadata: Metadata = {
   title: 'AMITDIED | Dark Melodic Beats',
@@ -18,6 +19,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         />
       </head>
       <body className="bg-black text-zinc-100 font-sans antialiased selection:bg-red-900/50 selection:text-red-200" suppressHydrationWarning>
+        <CustomCursor />
         {children}
       </body>
     </html>
