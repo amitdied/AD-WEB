@@ -8,6 +8,8 @@ import {
   saveStoredTokens,
   signSessionPayload,
 } from '@/lib/google/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,6 +131,23 @@ export async function GET(req: NextRequest) {
       );
       unauthResponse.cookies.delete(STATE_COOKIE_NAME);
       return unauthResponse;
+    }
+
+    // Persist refresh token server-side into Firestore settings/google_drive_auth
+    if (tokens.refresh_token) {
+      try {
+        const authDocRef = doc(db, 'settings', 'google_drive_auth');
+        await setDoc(
+          authDocRef,
+          {
+            refreshToken: tokens.refresh_token,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (fsErr) {
+        console.error('[AUTH ERROR] Failed to save refresh token to Firestore');
+      }
     }
 
     // Sign session token for authenticated admin session

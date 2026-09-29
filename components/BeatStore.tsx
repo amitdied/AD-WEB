@@ -29,7 +29,7 @@ export function BeatStore() {
         const res = await fetch("/api/beats", { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP error ${res.status}`);
         const customBeats = await res.json();
-        if (isMounted && Array.isArray(customBeats) && customBeats.length > 0) {
+        if (isMounted && Array.isArray(customBeats)) {
           setAllBeats(customBeats);
         }
       } catch (err) {

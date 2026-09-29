@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { GOOGLE_CONFIG } from './config';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const SESSION_SECRET = process.env.SESSION_SECRET || GOOGLE_CONFIG.CLIENT_SECRET || 'amitdied-secure-oauth-secret-key';
 export const SESSION_COOKIE_NAME = 'admin_session';
@@ -174,9 +176,24 @@ export async function getValidAccessToken(): Promise<string> {
     throw new Error('MISSING_ENV: GOOGLE_CLIENT_SECRET');
   }
 
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN || GOOGLE_CONFIG.REFRESH_TOKEN;
+  let refreshToken = process.env.GOOGLE_REFRESH_TOKEN || GOOGLE_CONFIG.REFRESH_TOKEN;
   if (!refreshToken) {
-    console.error('[AUTH ERROR] GOOGLE_REFRESH_TOKEN is not set in environment variables');
+    try {
+      const docRef = doc(db, 'settings', 'google_drive_auth');
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data?.refreshToken && typeof data.refreshToken === 'string') {
+          refreshToken = data.refreshToken.trim();
+        }
+      }
+    } catch (fsErr) {
+      console.error('[AUTH ERROR] Could not read refresh token from Firestore');
+    }
+  }
+
+  if (!refreshToken) {
+    console.error('[AUTH ERROR] GOOGLE_REFRESH_TOKEN is not set in environment variables or Firestore');
     throw new Error('DRIVE_AUTH_MISSING_REFRESH_TOKEN');
   }
 

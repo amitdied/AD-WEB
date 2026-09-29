@@ -40,33 +40,6 @@ export const beats = [
     "price": 24.99,
     "coverUrl": "https://picsum.photos/seed/solitude/400/400",
     "audioUrl": ""
-  },
-  {
-    "title": "Test Beat",
-    "bpm": 120,
-    "price": 29.99,
-    "moodTags": [
-      "Dark",
-      "Energetic"
-    ],
-    "id": "custom-1780384470653",
-    "coverUrl": "/placeholder-cover.png"
-  },
-  {
-    "id": "custom-1790409535354",
-    "title": "BAD THINGS",
-    "producer": "AMITDIED",
-    "bpm": 70,
-    "key": "C min",
-    "genre": "Trap",
-    "price": 8,
-    "buyLink": "",
-    "description": "",
-    "coverUrl": "/uploads/1790409529864-d40e396f4e8c2d83dff77170ee34d264.jpg",
-    "audioUrl": "/uploads/1790409535213-bad_things.mp3",
-    "moodTags": [
-      "dark"
-    ]
   }
 ];
 

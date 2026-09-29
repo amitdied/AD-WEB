@@ -187,6 +187,9 @@ export async function readBeatsFromSheet(): Promise<any[] | null> {
       }
     }
 
+    const rawPrice = price !== undefined && price !== '' ? Number(price) : undefined;
+    const finalPrice = typeof rawPrice === 'number' && !isNaN(rawPrice) ? rawPrice : 0;
+
     return {
       id: String(id || `beat-${Date.now()}`),
       title: String(title || 'Untitled Beat'),
@@ -194,7 +197,7 @@ export async function readBeatsFromSheet(): Promise<any[] | null> {
       bpm: Number(bpm) || 120,
       key: String(key || ''),
       genre: String(genre || 'Trap'),
-      price: Number(price) || 29.99,
+      price: finalPrice,
       coverUrl: String(coverUrl || '/placeholder-cover.png'),
       audioUrl: String(audioUrl || ''),
       buyLink: String(buyLink || ''),
