@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
   --animate-scan: scan 2s ease-in-out infinite;
 
   @keyframes scan {
@@ -11,4 +13,9 @@
       transform: translateY(100%);
     }
   }
+}
+
+:root {
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
 }

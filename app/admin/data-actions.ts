@@ -15,6 +15,19 @@ import {
 } from "@/lib/google/sheets";
 import { getAdminSession, getStoredTokens } from "@/lib/google/auth";
 import { GOOGLE_CONFIG } from "@/lib/google/config";
+import {
+  collection,
+  getDocs,
+  query,
+  orderBy,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  where,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
 
@@ -318,23 +331,36 @@ export async function syncWithGoogleSheet(): Promise<SyncResponse> {
 // ==========================================
 
 export async function getCustomBeats() {
-  const db = readDb();
-
   try {
-    const tokens = getStoredTokens();
-    if (tokens?.access_token) {
-      const sheetBeats = await readBeatsFromSheet();
-      if (Array.isArray(sheetBeats) && sheetBeats.length > 0) {
-        db.beats = sheetBeats;
-        writeDb(db);
-        return sheetBeats;
-      }
+    const beatsRef = collection(db, "beats");
+    const q = query(beatsRef, orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: data.id || docSnap.id,
+          title: data.title || "",
+          producer: data.producer || "AMITDIED",
+          bpm: data.bpm || 120,
+          key: data.key || "",
+          genre: data.genre || "",
+          price: data.price || 0,
+          buyLink: data.buyLink || "",
+          description: data.description || "",
+          coverUrl: data.coverUrl || "",
+          audioUrl: data.audioUrl || "",
+          moodTags: Array.isArray(data.moodTags) ? data.moodTags : [],
+        };
+      });
     }
   } catch (e) {
-    console.warn("Could not read beats from Google Sheet, using local DB:", e);
+    console.warn("Could not read beats from Firestore, using local DB:", e);
   }
 
-  return db.beats || [];
+  const localDb = readDb();
+  return localDb.beats || [];
 }
 
 export type ActionResponse<T = any> =
@@ -343,8 +369,6 @@ export type ActionResponse<T = any> =
 
 export async function addBeat(beat: any): Promise<ActionResponse> {
   try {
-    const db = readDb();
-
     const safeCoverUrl =
       typeof beat.coverUrl === "string" && beat.coverUrl.trim() !== ""
         ? beat.coverUrl
@@ -371,31 +395,37 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
             : [],
     };
 
-    db.beats.push(newBeat);
-    writeDb(db);
-
-    // Sync with Google Sheet BEATS tab
-    await writeAllBeatsToSheet(db.beats);
+    const beatsRef = collection(db, "beats");
+    await addDoc(beatsRef, {
+      ...newBeat,
+      createdAt: serverTimestamp(),
+    });
 
     revalidatePath("/");
     revalidatePath("/admin");
     return { ok: true, data: newBeat };
-  } catch (e: any) {
-    const safeError = formatSafeError(e);
-    console.error("[ADD BEAT ERROR]", safeError, e?.message);
-    return { ok: false, error: safeError };
+  } catch (error: any) {
+    console.error("[ADD BEAT ERROR]", error);
+    return {
+      ok: false,
+      error: "FIRESTORE_WRITE_FAILED: " + (error?.message || "unknown"),
+    };
   }
 }
 
 export async function updateBeat(id: string, updatedData: any): Promise<ActionResponse> {
   try {
-    const db = readDb();
-    const index = (db.beats || []).findIndex((b: any) => b.id === id);
-    if (index === -1) {
-      return { ok: false, error: "BEAT_NOT_FOUND: Beat ID does not exist" };
+    const beatsRef = collection(db, "beats");
+    const q = query(beatsRef, where("id", "==", id));
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      return { ok: false, error: "BEAT_NOT_FOUND" };
     }
 
-    const currentBeat = db.beats[index];
+    const docSnap = snapshot.docs[0];
+    const currentBeat = docSnap.data();
+
     const safeCoverUrl =
       typeof updatedData.coverUrl === "string" && updatedData.coverUrl.trim() !== ""
         ? updatedData.coverUrl
@@ -407,14 +437,15 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
 
     const updatedBeat = {
       ...currentBeat,
-      title: updatedData.title !== undefined ? String(updatedData.title) : currentBeat.title,
-      producer: updatedData.producer !== undefined ? String(updatedData.producer) : currentBeat.producer,
-      bpm: updatedData.bpm !== undefined ? Number(updatedData.bpm) : currentBeat.bpm,
-      key: updatedData.key !== undefined ? String(updatedData.key) : currentBeat.key,
-      genre: updatedData.genre !== undefined ? String(updatedData.genre) : currentBeat.genre,
-      price: updatedData.price !== undefined ? Number(updatedData.price) : currentBeat.price,
-      buyLink: updatedData.buyLink !== undefined ? String(updatedData.buyLink) : currentBeat.buyLink,
-      description: updatedData.description !== undefined ? String(updatedData.description) : currentBeat.description,
+      id: currentBeat.id || id,
+      title: updatedData.title !== undefined ? String(updatedData.title) : (currentBeat.title || "Untitled"),
+      producer: updatedData.producer !== undefined ? String(updatedData.producer) : (currentBeat.producer || "AMITDIED"),
+      bpm: updatedData.bpm !== undefined ? Number(updatedData.bpm) : (currentBeat.bpm || 120),
+      key: updatedData.key !== undefined ? String(updatedData.key) : (currentBeat.key || ""),
+      genre: updatedData.genre !== undefined ? String(updatedData.genre) : (currentBeat.genre || ""),
+      price: updatedData.price !== undefined ? Number(updatedData.price) : (currentBeat.price || 0),
+      buyLink: updatedData.buyLink !== undefined ? String(updatedData.buyLink) : (currentBeat.buyLink || ""),
+      description: updatedData.description !== undefined ? String(updatedData.description) : (currentBeat.description || ""),
       coverUrl: safeCoverUrl,
       audioUrl: safeAudioUrl,
       moodTags:
@@ -425,40 +456,42 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
             : currentBeat.moodTags || [],
     };
 
-    db.beats[index] = updatedBeat;
-    writeDb(db);
-
-    // Sync to Google Sheet BEATS tab
-    await writeAllBeatsToSheet(db.beats);
+    const { createdAt, ...fieldsToUpdate } = updatedBeat as any;
+    await updateDoc(docSnap.ref, fieldsToUpdate);
 
     revalidatePath("/");
     revalidatePath("/admin");
     return { ok: true, data: updatedBeat };
-  } catch (e: any) {
-    const safeError = formatSafeError(e);
-    console.error("[UPDATE BEAT ERROR]", safeError, e?.message);
-    return { ok: false, error: safeError };
+  } catch (error: any) {
+    console.error("[UPDATE BEAT ERROR]", error);
+    return {
+      ok: false,
+      error: "FIRESTORE_WRITE_FAILED: " + (error?.message || "unknown"),
+    };
   }
 }
 
 export async function deleteBeat(id: string): Promise<ActionResponse> {
   try {
-    const db = readDb();
-    db.beats = db.beats.filter((b: any) => b.id !== id);
-    if (!db.deletedIds) db.deletedIds = [];
-    if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
-    writeDb(db);
+    const beatsRef = collection(db, "beats");
+    const q = query(beatsRef, where("id", "==", id));
+    const snapshot = await getDocs(q);
 
-    // Sync to Google Sheet BEATS tab
-    await writeAllBeatsToSheet(db.beats);
+    if (!snapshot.empty) {
+      for (const docSnap of snapshot.docs) {
+        await deleteDoc(docSnap.ref);
+      }
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");
     return { ok: true, data: id };
-  } catch (e: any) {
-    const safeError = formatSafeError(e);
-    console.error("[DELETE BEAT ERROR]", safeError, e?.message);
-    return { ok: false, error: safeError };
+  } catch (error: any) {
+    console.error("[DELETE BEAT ERROR]", error);
+    return {
+      ok: false,
+      error: "FIRESTORE_WRITE_FAILED: " + (error?.message || "unknown"),
+    };
   }
 }
 

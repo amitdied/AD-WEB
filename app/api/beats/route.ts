@@ -1,31 +1,43 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { beats as defaultBeats } from '@/lib/data';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const dbPath = path.join(process.cwd(), 'data', 'db.json');
-    if (fs.existsSync(dbPath)) {
-      const content = fs.readFileSync(dbPath, 'utf8');
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed?.beats) && parsed.beats.length > 0) {
-        return NextResponse.json(parsed.beats, {
-          headers: {
-            'Cache-Control': 'no-store, max-age=0',
-          },
-        });
-      }
+    const beatsRef = collection(db, 'beats');
+    const q = query(beatsRef, orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      const beats = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: data.id || doc.id,
+          title: data.title || '',
+          producer: data.producer || 'AMITDIED',
+          bpm: data.bpm || 120,
+          key: data.key || '',
+          genre: data.genre || '',
+          price: data.price || 0,
+          buyLink: data.buyLink || '',
+          description: data.description || '',
+          coverUrl: data.coverUrl || '',
+          audioUrl: data.audioUrl || '',
+          moodTags: Array.isArray(data.moodTags) ? data.moodTags : [],
+        };
+      });
+      return NextResponse.json(beats, {
+        headers: { 'Cache-Control': 'no-store, max-age=0' },
+      });
     }
   } catch (error) {
-    console.error('Error reading beats DB:', error);
+    console.error('Error reading beats from Firestore:', error);
   }
 
   return NextResponse.json(defaultBeats, {
-    headers: {
-      'Cache-Control': 'no-store, max-age=0',
-    },
+    headers: { 'Cache-Control': 'no-store, max-age=0' },
   });
 }
