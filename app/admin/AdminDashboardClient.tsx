@@ -42,6 +42,7 @@ import {
   syncWithGoogleSheet,
   getGoogleStatus,
 } from "./data-actions";
+import { uploadToSupabaseStorage, sanitizeStorageFilename } from "@/lib/supabase";
 
 type Tab = "songs" | "videos" | "cctv";
 
@@ -407,6 +408,14 @@ function BeatsManager() {
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
 
+  // Supabase Storage Upload Progress and Status Tracking (0-100% per file)
+  const [audioUploadProgress, setAudioUploadProgress] = useState<number>(0);
+  const [coverUploadProgress, setCoverUploadProgress] = useState<number>(0);
+  const [audioUploadState, setAudioUploadState] = useState<'idle' | 'uploading' | 'complete' | 'failed'>('idle');
+  const [coverUploadState, setCoverUploadState] = useState<'idle' | 'uploading' | 'complete' | 'failed'>('idle');
+  const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null);
+  const [orphanedPaths, setOrphanedPaths] = useState<{ audioPath?: string; coverPath?: string } | null>(null);
+
   const loadBeats = useCallback(async () => {
     try {
       const data = await getCustomBeats();
@@ -435,43 +444,104 @@ function BeatsManager() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsUploading(true);
+    setUploadErrorMessage(null);
+    setOrphanedPaths(null);
 
-    let coverUrl = newBeat.coverUrl;
-    let audioUrl = newBeat.audioUrl;
+    if (!audioFile) {
+      alert("Please select a beat audio file to upload.");
+      return;
+    }
+    if (!coverFile) {
+      alert("Please select a beat cover image to upload.");
+      return;
+    }
+
+    setIsUploading(true);
+    setAudioUploadProgress(0);
+    setCoverUploadProgress(0);
+    setAudioUploadState('uploading');
+    setCoverUploadState('uploading');
+
+    // 3. Unique file paths
+    const uniqueId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const audioPath = `beats/${uniqueId}/audio-${sanitizeStorageFilename(audioFile.name)}`;
+    const coverPath = `beats/${uniqueId}/cover-${sanitizeStorageFilename(coverFile.name)}`;
+
+    let audioSuccess = false;
+    let coverSuccess = false;
+    let uploadFailReason = "";
 
     try {
-      // Upload Cover to Google Drive COVERS folder (1b1T6joDt1c9wxhexUc31n1YI_DdebzOm)
-      if (coverFile) {
-        const formData = new FormData();
-        formData.append("file", coverFile);
-        formData.append("folderType", "covers");
-        const uploadRes = await uploadFile(formData, "covers");
-        if (!uploadRes.ok) {
-          alert("Failed to save beat: " + uploadRes.error);
-          setIsUploading(false);
-          return;
-        }
-        coverUrl = uploadRes.url;
+      // 1 & 2. Upload audio and cover directly from client browser without converting to Node Buffers
+      const [audioResult, coverResult] = await Promise.all([
+        uploadToSupabaseStorage("audio", audioPath, audioFile, (pct) => {
+          setAudioUploadProgress(pct);
+        }),
+        uploadToSupabaseStorage("covers", coverPath, coverFile, (pct) => {
+          setCoverUploadProgress(pct);
+        }),
+      ]);
+
+      if (audioResult.ok) {
+        audioSuccess = true;
+        setAudioUploadState('complete');
+      } else {
+        setAudioUploadState('failed');
+        uploadFailReason += `Audio upload failed: ${audioResult.error || 'Unknown error'}. `;
       }
 
-      // Upload Audio to Google Drive AUDIO folder (1E3no0R-HSGpK_ihIaDMzLutTs3HwD02s)
-      if (audioFile) {
-        const formData = new FormData();
-        formData.append("file", audioFile);
-        formData.append("folderType", "audio");
-        const uploadRes = await uploadFile(formData, "audio");
-        if (!uploadRes.ok) {
-          alert("Failed to save beat: " + uploadRes.error);
-          setIsUploading(false);
-          return;
-        }
-        audioUrl = uploadRes.url;
+      if (coverResult.ok) {
+        coverSuccess = true;
+        setCoverUploadState('complete');
+      } else {
+        setCoverUploadState('failed');
+        uploadFailReason += `Cover upload failed: ${coverResult.error || 'Unknown error'}. `;
       }
 
-      const addRes = await addBeat({ ...newBeat, coverUrl, audioUrl });
+      // 11. If either upload fails, do NOT create the Firestore beat document.
+      if (!audioSuccess || !coverSuccess) {
+        setIsUploading(false);
+        setUploadErrorMessage(uploadFailReason.trim());
+        alert(`Upload failed! ${uploadFailReason.trim()}`);
+        return;
+      }
+
+      // 8. Only create/save the Firestore beat metadata AFTER both files successfully upload.
+      // 9. Save the Supabase storage paths in the beat metadata.
+      // 10. Preserve the exact price entered by the admin.
+      const safeAudioUrl = `/api/media/supabase?bucket=audio&path=${encodeURIComponent(audioPath)}`;
+      const safeCoverUrl = `/api/media/supabase?bucket=covers&path=${encodeURIComponent(coverPath)}`;
+
+      const beatPayload = {
+        title: newBeat.title,
+        producer: newBeat.producer || "AMITDIED",
+        bpm: Number(newBeat.bpm) || 120,
+        key: newBeat.key || "",
+        genre: newBeat.genre || "Trap",
+        moodTags: newBeat.moodTags,
+        price: typeof newBeat.price === "number" ? newBeat.price : (parseFloat(String(newBeat.price)) || 0),
+        buyLink: newBeat.buyLink || "",
+        description: newBeat.description || "",
+        audioUrl: safeAudioUrl,
+        coverUrl: safeCoverUrl,
+        audioStoragePath: audioPath,
+        coverStoragePath: coverPath,
+        storageProvider: "supabase",
+        supabaseAudioBucket: "audio",
+        supabaseCoversBucket: "covers",
+      };
+
+      const addRes = await addBeat(beatPayload);
+
+      // 12. If Firestore saving fails after successful uploads, clearly show failure and return upload paths
       if (!addRes.ok) {
-        alert("Failed to save beat: " + addRes.error);
+        const errorDetail = `Firestore metadata save failed: ${addRes.error}`;
+        setOrphanedPaths({ audioPath, coverPath });
+        setUploadErrorMessage(`${errorDetail} (Uploaded files: audio=${audioPath}, cover=${coverPath})`);
+        alert(`Failed to save beat metadata to Firestore! \nUploaded Supabase paths:\nAudio: ${audioPath}\nCover: ${coverPath}\nError: ${addRes.error}`);
         setIsUploading(false);
         return;
       }
@@ -495,10 +565,24 @@ function BeatsManager() {
       });
       setCoverFile(null);
       setAudioFile(null);
-      alert("Beat saved & synced to Google Sheets and Google Drive!");
+      setAudioUploadProgress(0);
+      setCoverUploadProgress(0);
+      setAudioUploadState('idle');
+      setCoverUploadState('idle');
+      setUploadErrorMessage(null);
+      setOrphanedPaths(null);
+      alert("Beat successfully uploaded to Supabase Storage and saved to database!");
     } catch (error: any) {
       console.error("Upload failed", error);
-      alert("Failed to save beat: " + (error.message || "Unknown error"));
+      const errMsg = error?.message || "Unknown error during upload process";
+      setUploadErrorMessage(errMsg);
+      if (audioSuccess || coverSuccess) {
+        setOrphanedPaths({
+          audioPath: audioSuccess ? audioPath : undefined,
+          coverPath: coverSuccess ? coverPath : undefined,
+        });
+      }
+      alert("Upload failed: " + errMsg);
     } finally {
       setIsUploading(false);
     }
@@ -521,40 +605,45 @@ function BeatsManager() {
 
     let coverUrl = editingBeat.coverUrl;
     let audioUrl = editingBeat.audioUrl;
+    let coverStoragePath = editingBeat.coverStoragePath;
+    let audioStoragePath = editingBeat.audioStoragePath;
 
     try {
-      // Upload replace cover to COVERS folder
+      // Upload replace cover to Supabase COVERS bucket
       if (editCoverFile) {
-        const formData = new FormData();
-        formData.append("file", editCoverFile);
-        formData.append("folderType", "covers");
-        const uploadRes = await uploadFile(formData, "covers");
-        if (!uploadRes.ok) {
-          alert("Failed to update beat: " + uploadRes.error);
+        const uniqueId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
+        const coverPath = `beats/${uniqueId}/cover-${sanitizeStorageFilename(editCoverFile.name)}`;
+        const coverRes = await uploadToSupabaseStorage("covers", coverPath, editCoverFile);
+        if (!coverRes.ok) {
+          alert("Failed to update cover: " + coverRes.error);
           setIsUpdating(false);
           return;
         }
-        coverUrl = uploadRes.url;
+        coverUrl = `/api/media/supabase?bucket=covers&path=${encodeURIComponent(coverPath)}`;
+        coverStoragePath = coverPath;
       }
 
-      // Upload replace audio to AUDIO folder
+      // Upload replace audio to Supabase AUDIO bucket
       if (editAudioFile) {
-        const formData = new FormData();
-        formData.append("file", editAudioFile);
-        formData.append("folderType", "audio");
-        const uploadRes = await uploadFile(formData, "audio");
-        if (!uploadRes.ok) {
-          alert("Failed to update beat: " + uploadRes.error);
+        const uniqueId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
+        const audioPath = `beats/${uniqueId}/audio-${sanitizeStorageFilename(editAudioFile.name)}`;
+        const audioRes = await uploadToSupabaseStorage("audio", audioPath, editAudioFile);
+        if (!audioRes.ok) {
+          alert("Failed to update audio: " + audioRes.error);
           setIsUpdating(false);
           return;
         }
-        audioUrl = uploadRes.url;
+        audioUrl = `/api/media/supabase?bucket=audio&path=${encodeURIComponent(audioPath)}`;
+        audioStoragePath = audioPath;
       }
 
       const updateRes = await updateBeat(editingBeat.id, {
         ...editingBeat,
         coverUrl,
         audioUrl,
+        coverStoragePath,
+        audioStoragePath,
+        storageProvider: (coverStoragePath || audioStoragePath) ? "supabase" : editingBeat.storageProvider,
       });
       if (!updateRes.ok) {
         alert("Failed to update beat: " + updateRes.error);
@@ -565,7 +654,7 @@ function BeatsManager() {
       const updated = await getCustomBeats();
       setBeats(updated);
       setEditingBeat(null);
-      alert("Beat updated & synced to Google Sheet!");
+      alert("Beat updated successfully!");
     } catch (error: any) {
       console.error("Update failed", error);
       alert("Failed to update beat: " + (error.message || "Unknown error"));
@@ -894,7 +983,7 @@ function BeatsManager() {
           <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
             <h4 className="font-bold text-white flex items-center gap-2">
               <Plus className="w-4 h-4 text-red-500" />
-              <span>Add New Store Beat (Drive Upload)</span>
+              <span>Add New Store Beat (Supabase Storage)</span>
             </h4>
             <button
               type="button"
@@ -1007,28 +1096,111 @@ function BeatsManager() {
             <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
               <label className="block text-zinc-300 mb-1.5 text-xs font-semibold flex items-center justify-between">
                 <span>Cover Image (jpg, png, webp)</span>
-                <span className="text-[10px] text-blue-400 font-mono">→ COVERS FOLDER</span>
+                <span className="text-[10px] text-emerald-400 font-mono">→ SUPABASE COVERS BUCKET</span>
               </label>
               <input
                 type="file"
                 accept="image/*"
-                onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  setCoverFile(e.target.files?.[0] || null);
+                  setCoverUploadProgress(0);
+                  setCoverUploadState('idle');
+                }}
                 className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
               />
             </div>
             <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
               <label className="block text-zinc-300 mb-1.5 text-xs font-semibold flex items-center justify-between">
                 <span>Beat Audio (mp3, wav)</span>
-                <span className="text-[10px] text-blue-400 font-mono">→ AUDIO FOLDER</span>
+                <span className="text-[10px] text-emerald-400 font-mono">→ SUPABASE AUDIO BUCKET</span>
               </label>
               <input
                 type="file"
                 accept=".mp3,audio/mpeg,.wav,audio/wav"
-                onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  setAudioFile(e.target.files?.[0] || null);
+                  setAudioUploadProgress(0);
+                  setAudioUploadState('idle');
+                }}
                 className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[11px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
               />
             </div>
           </div>
+
+          {/* Supabase Storage Upload Progress & Status */}
+          {(isUploading || audioUploadState !== 'idle' || coverUploadState !== 'idle' || uploadErrorMessage) && (
+            <div className="p-4 bg-zinc-900/90 border border-zinc-800 rounded-xl space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
+                <span>Supabase Storage Progress</span>
+                {isUploading && <span className="text-red-400 animate-pulse">Uploading in progress...</span>}
+              </div>
+
+              {/* Cover Upload Progress */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-zinc-300 text-xs">
+                  <span className="flex items-center gap-2">
+                    <span>Cover Image:</span>
+                    {coverUploadState === 'uploading' && <span className="text-yellow-400">Uploading ({coverUploadProgress}%)</span>}
+                    {coverUploadState === 'complete' && <span className="text-emerald-400 font-semibold">Upload complete ✓</span>}
+                    {coverUploadState === 'failed' && <span className="text-red-400 font-semibold">Upload failed ✗</span>}
+                  </span>
+                  <span className="font-bold text-zinc-200">{coverUploadProgress}%</span>
+                </div>
+                <div className="w-full bg-zinc-950 rounded-full h-2 overflow-hidden border border-zinc-800">
+                  <div
+                    className={`h-full transition-all duration-200 ${
+                      coverUploadState === 'failed'
+                        ? 'bg-red-600'
+                        : coverUploadState === 'complete'
+                        ? 'bg-emerald-500'
+                        : 'bg-red-500'
+                    }`}
+                    style={{ width: `${coverUploadProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Audio Upload Progress */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-zinc-300 text-xs">
+                  <span className="flex items-center gap-2">
+                    <span>Beat Audio:</span>
+                    {audioUploadState === 'uploading' && <span className="text-yellow-400">Uploading ({audioUploadProgress}%)</span>}
+                    {audioUploadState === 'complete' && <span className="text-emerald-400 font-semibold">Upload complete ✓</span>}
+                    {audioUploadState === 'failed' && <span className="text-red-400 font-semibold">Upload failed ✗</span>}
+                  </span>
+                  <span className="font-bold text-zinc-200">{audioUploadProgress}%</span>
+                </div>
+                <div className="w-full bg-zinc-950 rounded-full h-2 overflow-hidden border border-zinc-800">
+                  <div
+                    className={`h-full transition-all duration-200 ${
+                      audioUploadState === 'failed'
+                        ? 'bg-red-600'
+                        : audioUploadState === 'complete'
+                        ? 'bg-emerald-500'
+                        : 'bg-red-500'
+                    }`}
+                    style={{ width: `${audioUploadProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Error and Orphaned Paths */}
+              {uploadErrorMessage && (
+                <div className="p-2.5 bg-red-950/60 border border-red-900 rounded-lg text-red-300 text-xs">
+                  <div className="font-bold mb-0.5">Upload / Save Error:</div>
+                  <div>{uploadErrorMessage}</div>
+                  {orphanedPaths && (
+                    <div className="mt-2 text-[10px] text-zinc-400 border-t border-red-900/60 pt-1.5 space-y-0.5">
+                      <div className="font-semibold text-yellow-400">Orphaned files in Supabase:</div>
+                      {orphanedPaths.coverPath && <div>• Cover: {orphanedPaths.coverPath}</div>}
+                      {orphanedPaths.audioPath && <div>• Audio: {orphanedPaths.audioPath}</div>}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Buy Link</label>
@@ -1068,7 +1240,7 @@ function BeatsManager() {
               disabled={isUploading}
               className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition-colors shadow-lg"
             >
-              {isUploading ? "Uploading to Drive & Sheets..." : "Save Beat"}
+              {isUploading ? "Uploading to Supabase..." : "Save Beat"}
             </button>
           </div>
         </form>

@@ -339,30 +339,31 @@ export async function getCustomBeats() {
     if (!snapshot.empty) {
       return snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
-        const rawPrice = data.price !== undefined && data.price !== '' ? Number(data.price) : 0;
-        const validPrice = typeof rawPrice === 'number' && !isNaN(rawPrice) ? rawPrice : 0;
-
         return {
           id: data.id || docSnap.id,
           title: data.title || "",
           producer: data.producer || "AMITDIED",
-          bpm: data.bpm !== undefined ? Number(data.bpm) : 120,
+          bpm: data.bpm || 120,
           key: data.key || "",
           genre: data.genre || "",
-          price: validPrice,
+          price: typeof data.price === "number" ? data.price : (parseFloat(String(data.price)) || 0),
           buyLink: data.buyLink || "",
           description: data.description || "",
           coverUrl: data.coverUrl || "",
           audioUrl: data.audioUrl || "",
+          audioStoragePath: data.audioStoragePath || "",
+          coverStoragePath: data.coverStoragePath || "",
+          storageProvider: data.storageProvider || "drive",
           moodTags: Array.isArray(data.moodTags) ? data.moodTags : [],
         };
       });
     }
-    return [];
   } catch (e) {
-    console.warn("Could not read beats from Firestore:", e);
-    return [];
+    console.warn("Could not read beats from Firestore, using local DB:", e);
   }
+
+  const localDb = readDb();
+  return localDb.beats || [];
 }
 
 export type ActionResponse<T = any> =
@@ -377,17 +378,21 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
         : "/placeholder-cover.png";
     const safeAudioUrl = typeof beat.audioUrl === "string" ? beat.audioUrl : "";
 
-    const rawPrice = beat.price !== undefined && beat.price !== "" ? Number(beat.price) : 0;
-    const finalPrice = typeof rawPrice === "number" && !isNaN(rawPrice) ? rawPrice : 0;
+    const exactPrice =
+      typeof beat.price === "number"
+        ? beat.price
+        : !isNaN(parseFloat(String(beat.price)))
+          ? parseFloat(String(beat.price))
+          : 0;
 
-    const newBeat = {
+    const newBeat: any = {
       id: "custom-" + Date.now().toString(),
       title: String(beat.title || "Untitled"),
       producer: String(beat.producer || "AMITDIED"),
       bpm: Number(beat.bpm) || 120,
       key: String(beat.key || ""),
       genre: String(beat.genre || ""),
-      price: finalPrice,
+      price: exactPrice,
       buyLink: String(beat.buyLink || ""),
       description: String(beat.description || ""),
       coverUrl: safeCoverUrl,
@@ -399,6 +404,12 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
             ? beat.moodTags.map(String)
             : [],
     };
+
+    if (beat.audioStoragePath) newBeat.audioStoragePath = String(beat.audioStoragePath);
+    if (beat.coverStoragePath) newBeat.coverStoragePath = String(beat.coverStoragePath);
+    if (beat.storageProvider) newBeat.storageProvider = String(beat.storageProvider);
+    if (beat.supabaseAudioBucket) newBeat.supabaseAudioBucket = String(beat.supabaseAudioBucket);
+    if (beat.supabaseCoversBucket) newBeat.supabaseCoversBucket = String(beat.supabaseCoversBucket);
 
     const beatsRef = collection(db, "beats");
     await addDoc(beatsRef, {
@@ -440,13 +451,12 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
         ? updatedData.audioUrl
         : currentBeat.audioUrl || "";
 
-    const rawPrice =
-      updatedData.price !== undefined && updatedData.price !== ""
-        ? Number(updatedData.price)
-        : currentBeat.price;
-    const finalPrice = typeof rawPrice === "number" && !isNaN(rawPrice) ? rawPrice : 0;
+    const exactUpdatedPrice =
+      updatedData.price !== undefined
+        ? (typeof updatedData.price === "number" ? updatedData.price : (parseFloat(String(updatedData.price)) || 0))
+        : (currentBeat.price || 0);
 
-    const updatedBeat = {
+    const updatedBeat: any = {
       ...currentBeat,
       id: currentBeat.id || id,
       title: updatedData.title !== undefined ? String(updatedData.title) : (currentBeat.title || "Untitled"),
@@ -454,11 +464,14 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
       bpm: updatedData.bpm !== undefined ? Number(updatedData.bpm) : (currentBeat.bpm || 120),
       key: updatedData.key !== undefined ? String(updatedData.key) : (currentBeat.key || ""),
       genre: updatedData.genre !== undefined ? String(updatedData.genre) : (currentBeat.genre || ""),
-      price: finalPrice,
+      price: exactUpdatedPrice,
       buyLink: updatedData.buyLink !== undefined ? String(updatedData.buyLink) : (currentBeat.buyLink || ""),
       description: updatedData.description !== undefined ? String(updatedData.description) : (currentBeat.description || ""),
       coverUrl: safeCoverUrl,
       audioUrl: safeAudioUrl,
+      audioStoragePath: updatedData.audioStoragePath || currentBeat.audioStoragePath || "",
+      coverStoragePath: updatedData.coverStoragePath || currentBeat.coverStoragePath || "",
+      storageProvider: updatedData.storageProvider || currentBeat.storageProvider || "drive",
       moodTags:
         typeof updatedData.moodTags === "string"
           ? updatedData.moodTags.split(",").map((t: string) => t.trim())
@@ -481,7 +494,6 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
     };
   }
 }
-
 
 export async function deleteBeat(id: string): Promise<ActionResponse> {
   try {
