@@ -52,6 +52,20 @@
       ],
       "id": "custom-1780384470653",
       "coverUrl": "/placeholder-cover.png"
+    },
+    {
+      "id": "custom-1790594649275",
+      "title": "Test",
+      "producer": "AMITDIED",
+      "bpm": 120,
+      "key": "",
+      "genre": "",
+      "price": 0,
+      "buyLink": "",
+      "description": "",
+      "coverUrl": "/placeholder-cover.png",
+      "audioUrl": "",
+      "moodTags": []
     }
   ],
   "videos": [

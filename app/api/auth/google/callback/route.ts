@@ -58,11 +58,9 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. CSRF State & Connect Mode Validation
-    const rawStateCookie = req.cookies.get(STATE_COOKIE_NAME)?.value || '';
-    const [expectedState, mode] = rawStateCookie.split(':');
-    const isConnectMode = mode === 'connect';
+    const stateCookie = req.cookies.get(STATE_COOKIE_NAME)?.value || '';
 
-    if (!state || !expectedState || state !== expectedState) {
+    if (!state || !stateCookie || state !== stateCookie) {
       console.error(
         '[AUTH ERROR] OAuth state verification failed or state cookie expired. Reason: STATE_MISMATCH'
       );
@@ -70,6 +68,8 @@ export async function GET(req: NextRequest) {
         new URL('/admin/login?code=STATE_MISMATCH', baseAppUrl)
       );
     }
+
+    const isConnectMode = state.endsWith('.connect') || stateCookie.endsWith('.connect');
 
     if (!code) {
       console.error('[AUTH ERROR] Authorization code missing from callback URL.');
@@ -131,38 +131,7 @@ export async function GET(req: NextRequest) {
       return unauthResponse;
     }
 
-    // 7. Check if this is the "connect" flow for Drive & Sheets
-    if (isConnectMode) {
-      if (!tokens.refresh_token) {
-        console.error('[AUTH ERROR] Google did not return a refresh token during connect flow.');
-        return NextResponse.redirect(
-          new URL('/admin/connect-google?error=NO_REFRESH_TOKEN', baseAppUrl)
-        );
-      }
-
-      // Put the refresh token in a short-lived (5 minute), HTTP-only, Secure cookie and redirect to /admin/connect-google
-      const connectResponse = NextResponse.redirect(new URL('/admin/connect-google', baseAppUrl));
-      connectResponse.cookies.set('google_connect_refresh_token', tokens.refresh_token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 5 * 60, // 5 minutes
-      });
-      connectResponse.cookies.delete(STATE_COOKIE_NAME);
-      return connectResponse;
-    }
-
-    // 8. Normal Login Mode: Save in-memory tokens & create signed admin session
-    saveStoredTokens({
-      ...tokens,
-      user: {
-        email: userInfo.email,
-        name: userInfo.name,
-        picture: userInfo.picture,
-      },
-    });
-
+    // Sign session token for authenticated admin session
     let sessionToken: string;
     try {
       sessionToken = signSessionPayload({
@@ -179,6 +148,55 @@ export async function GET(req: NextRequest) {
         new URL(`/admin/login?code=SESSION_FAILED&detail=${encodeURIComponent(errName)}`, baseAppUrl)
       );
     }
+
+    // 7. Check if this is the "connect" flow for Drive & Sheets
+    if (isConnectMode) {
+      if (!tokens.refresh_token) {
+        console.error('[AUTH ERROR] Google did not return a refresh token during connect flow.');
+        const noTokenResponse = NextResponse.redirect(
+          new URL('/admin/connect-google?error=NO_REFRESH_TOKEN_RETURNED', baseAppUrl)
+        );
+        noTokenResponse.cookies.set(SESSION_COOKIE_NAME, sessionToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 7 * 24 * 60 * 60, // 7 days
+        });
+        noTokenResponse.cookies.delete(STATE_COOKIE_NAME);
+        return noTokenResponse;
+      }
+
+      // Put the refresh token in a short-lived (5 minute), HTTP-only, Secure cookie and redirect to /admin/connect-google
+      const connectResponse = NextResponse.redirect(new URL('/admin/connect-google', baseAppUrl));
+      connectResponse.cookies.set('google_connect_refresh_token', tokens.refresh_token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 5 * 60, // 5 minutes
+      });
+      // Maintain admin session so /admin/connect-google can be accessed immediately
+      connectResponse.cookies.set(SESSION_COOKIE_NAME, sessionToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60, // 7 days
+      });
+      connectResponse.cookies.delete(STATE_COOKIE_NAME);
+      return connectResponse;
+    }
+
+    // 8. Normal Login Mode: Save in-memory tokens
+    saveStoredTokens({
+      ...tokens,
+      user: {
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture,
+      },
+    });
 
     // Redirect directly to /admin using NextResponse.redirect and attach session cookie
     const adminUrl = new URL('/admin', process.env.APP_URL || 'https://amitdied.vercel.app');

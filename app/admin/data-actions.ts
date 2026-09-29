@@ -18,6 +18,44 @@ import { GOOGLE_CONFIG } from "@/lib/google/config";
 
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
 
+function formatSafeError(err: any): string {
+  const msg = String(err?.message || err || "UNKNOWN_ERROR");
+
+  // Check known clean codes
+  if (msg.includes("DRIVE_AUTH_MISSING_REFRESH_TOKEN")) {
+    return "DRIVE_AUTH_MISSING_REFRESH_TOKEN";
+  }
+  if (msg.includes("DRIVE_AUTH_FAILED")) {
+    const errorPart = msg.split(":")[1]?.trim() || "unauthorized";
+    return `DRIVE_AUTH_FAILED: ${errorPart}`;
+  }
+  if (msg.includes("DRIVE_UPLOAD_FAILED")) {
+    const errorPart = msg.split(":")[1]?.trim() || "upload_failed";
+    return `DRIVE_UPLOAD_FAILED: ${errorPart}`;
+  }
+  if (msg.includes("SHEETS_TAB_NOT_FOUND")) {
+    const tab = msg.split(":")[1]?.trim() || "UNKNOWN";
+    return `SHEETS_TAB_NOT_FOUND: ${tab}`;
+  }
+  if (msg.includes("MISSING_ENV:")) {
+    const varName = msg.split(":")[1]?.trim() || "CONFIG";
+    return `MISSING_ENV: ${varName}`;
+  }
+  if (msg.includes("FILE_TOO_LARGE")) {
+    return msg;
+  }
+
+  // Fallbacks for status codes or keywords
+  if (msg.includes("403")) return "DRIVE_UPLOAD_FAILED: status_403";
+  if (msg.includes("401") || msg.includes("invalid_grant")) return "DRIVE_AUTH_FAILED: invalid_grant";
+  if (msg.includes("invalid_client")) return "DRIVE_AUTH_FAILED: invalid_client";
+  if (msg.includes("BEATS")) return "SHEETS_TAB_NOT_FOUND: BEATS";
+  if (msg.includes("PORTFOLIO")) return "SHEETS_TAB_NOT_FOUND: PORTFOLIO";
+  if (msg.includes("CCTV")) return "SHEETS_TAB_NOT_FOUND: CCTV";
+
+  return `ACTION_FAILED: ${msg.replace(/[^a-zA-Z0-9_:-]/g, "_").slice(0, 40)}`;
+}
+
 function readDb() {
   if (!fs.existsSync(DB_PATH)) {
     return {
@@ -126,49 +164,67 @@ export async function initializeDb() {
   return db;
 }
 
+export type UploadResponse =
+  | { ok: true; url: string }
+  | { ok: false; error: string };
+
 /**
- * Upload a file to Google Drive with automatic folder routing:
- * - AUDIO folder (1E3no0R-HSGpK_ihIaDMzLutTs3HwD02s) for audio
- * - COVERS folder (1b1T6joDt1c9wxhexUc31n1YI_DdebzOm) for covers
- * - MEDIA folder (1kaDYyeycE7jQkOjIV9xHQJaTCLWpXzqT) for CCTV/media
+ * Upload a file to Google Drive with automatic folder routing.
+ * Returns { ok: true, url } or { ok: false, error: "SHORT_SAFE_CODE: detail" }
  */
 export async function uploadFile(
   formData: FormData,
   folderTypeOverride?: DriveFolderType
-) {
-  const file = formData.get("file") as File;
-  if (!file) throw new Error("No file provided");
+): Promise<UploadResponse> {
+  try {
+    const file = formData.get("file") as File;
+    if (!file) {
+      return { ok: false, error: "MISSING_FILE: No file provided" };
+    }
 
-  const explicitType = (formData.get("folderType") as DriveFolderType) || folderTypeOverride;
+    // Limit check (e.g. 50MB)
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      const sizeMb = Math.round(file.size / (1024 * 1024));
+      console.error(`[UPLOAD ERROR] File too large: ${file.name} (${sizeMb}MB)`);
+      return { ok: false, error: `FILE_TOO_LARGE: ${sizeMb}MB exceeds limit` };
+    }
 
-  let folderType: DriveFolderType = "covers";
-  if (explicitType) {
-    folderType = explicitType;
-  } else if (
-    file.type.startsWith("audio/") ||
-    file.name.match(/\.(mp3|wav|ogg|flac|m4a|aac)$/i)
-  ) {
-    folderType = "audio";
-  } else if (
-    file.type.startsWith("video/") ||
-    file.name.match(/\.(mp4|mov|webm|avi)$/i)
-  ) {
-    folderType = "media";
-  } else {
-    folderType = "covers";
+    const explicitType = (formData.get("folderType") as DriveFolderType) || folderTypeOverride;
+
+    let folderType: DriveFolderType = "covers";
+    if (explicitType) {
+      folderType = explicitType;
+    } else if (
+      file.type.startsWith("audio/") ||
+      file.name.match(/\.(mp3|wav|ogg|flac|m4a|aac)$/i)
+    ) {
+      folderType = "audio";
+    } else if (
+      file.type.startsWith("video/") ||
+      file.name.match(/\.(mp4|mov|webm|avi)$/i)
+    ) {
+      folderType = "media";
+    } else {
+      folderType = "covers";
+    }
+
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    const result = await uploadToGoogleDrive(
+      buffer,
+      file.name,
+      file.type || "application/octet-stream",
+      folderType
+    );
+
+    return { ok: true, url: result.url };
+  } catch (err: any) {
+    const safeError = formatSafeError(err);
+    console.error("[UPLOAD ACTION ERROR]", safeError, err?.message);
+    return { ok: false, error: safeError };
   }
-
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
-
-  const result = await uploadToGoogleDrive(
-    buffer,
-    file.name,
-    file.type || "application/octet-stream",
-    folderType
-  );
-
-  return result.url;
 }
 
 // ==========================================
@@ -194,16 +250,15 @@ export async function getGoogleStatus() {
   };
 }
 
-export async function syncWithGoogleSheet() {
-  const tokens = getStoredTokens();
-  if (!tokens?.access_token) {
-    throw new Error("Google OAuth not connected. Please log in with AMITDIED69@gmail.com first.");
-  }
+export type SyncResponse =
+  | { ok: true; message: string; beatsCount: number; videosCount: number; cctvCount: number }
+  | { ok: false; error: string };
 
-  const db = readDb();
-  let syncedFromSheet = false;
-
+export async function syncWithGoogleSheet(): Promise<SyncResponse> {
   try {
+    const db = readDb();
+    let syncedFromSheet = false;
+
     // 1. Try reading from Google Sheet
     const sheetBeats = await readBeatsFromSheet();
     const sheetVideos = await readPortfolioFromSheet();
@@ -216,7 +271,6 @@ export async function syncWithGoogleSheet() {
       updated = true;
       syncedFromSheet = true;
     } else if (Array.isArray(db.beats) && db.beats.length > 0) {
-      // Sheet is empty, push DB beats to sheet
       await writeAllBeatsToSheet(db.beats);
     }
 
@@ -244,7 +298,7 @@ export async function syncWithGoogleSheet() {
     revalidatePath("/admin");
 
     return {
-      success: true,
+      ok: true,
       message: syncedFromSheet
         ? "Successfully synced latest data from Google Sheet!"
         : "Google Sheet was empty; successfully pushed current data to Google Sheet!",
@@ -253,8 +307,9 @@ export async function syncWithGoogleSheet() {
       cctvCount: (db.instagramTransmissions || []).length,
     };
   } catch (error: any) {
-    console.error("Failed to sync with Google Sheet:", error);
-    throw new Error(error.message || "Failed to sync with Google Sheet");
+    const safeError = formatSafeError(error);
+    console.error("[SYNC SHEET ERROR]", safeError, error?.message);
+    return { ok: false, error: safeError };
   }
 }
 
@@ -265,7 +320,6 @@ export async function syncWithGoogleSheet() {
 export async function getCustomBeats() {
   const db = readDb();
 
-  // If tokens exist, attempt to fetch fresh from Google Sheet in background
   try {
     const tokens = getStoredTokens();
     if (tokens?.access_token) {
@@ -283,120 +337,129 @@ export async function getCustomBeats() {
   return db.beats || [];
 }
 
-export async function addBeat(beat: any) {
-  const db = readDb();
+export type ActionResponse<T = any> =
+  | { ok: true; data: T }
+  | { ok: false; error: string };
 
-  const safeCoverUrl =
-    typeof beat.coverUrl === "string" && beat.coverUrl.trim() !== ""
-      ? beat.coverUrl
-      : "/placeholder-cover.png";
-  const safeAudioUrl = typeof beat.audioUrl === "string" ? beat.audioUrl : "";
-
-  const newBeat = {
-    id: "custom-" + Date.now().toString(),
-    title: String(beat.title || "Untitled"),
-    producer: String(beat.producer || "AMITDIED"),
-    bpm: Number(beat.bpm) || 120,
-    key: String(beat.key || ""),
-    genre: String(beat.genre || ""),
-    price: Number(beat.price) || 0,
-    buyLink: String(beat.buyLink || ""),
-    description: String(beat.description || ""),
-    coverUrl: safeCoverUrl,
-    audioUrl: safeAudioUrl,
-    moodTags:
-      typeof beat.moodTags === "string"
-        ? beat.moodTags.split(",").map((t: string) => t.trim())
-        : Array.isArray(beat.moodTags)
-          ? beat.moodTags.map(String)
-          : [],
-  };
-
-  db.beats.push(newBeat);
-  writeDb(db);
-
-  // Sync with Google Sheet BEATS tab
+export async function addBeat(beat: any): Promise<ActionResponse> {
   try {
-    await writeAllBeatsToSheet(db.beats);
-  } catch (e: any) {
-    console.error("Failed to sync new beat to Google Sheet:", e);
-    throw new Error(e?.message || "SHEETS_SYNC_FAILED");
-  }
+    const db = readDb();
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  return newBeat;
+    const safeCoverUrl =
+      typeof beat.coverUrl === "string" && beat.coverUrl.trim() !== ""
+        ? beat.coverUrl
+        : "/placeholder-cover.png";
+    const safeAudioUrl = typeof beat.audioUrl === "string" ? beat.audioUrl : "";
+
+    const newBeat = {
+      id: "custom-" + Date.now().toString(),
+      title: String(beat.title || "Untitled"),
+      producer: String(beat.producer || "AMITDIED"),
+      bpm: Number(beat.bpm) || 120,
+      key: String(beat.key || ""),
+      genre: String(beat.genre || ""),
+      price: Number(beat.price) || 0,
+      buyLink: String(beat.buyLink || ""),
+      description: String(beat.description || ""),
+      coverUrl: safeCoverUrl,
+      audioUrl: safeAudioUrl,
+      moodTags:
+        typeof beat.moodTags === "string"
+          ? beat.moodTags.split(",").map((t: string) => t.trim())
+          : Array.isArray(beat.moodTags)
+            ? beat.moodTags.map(String)
+            : [],
+    };
+
+    db.beats.push(newBeat);
+    writeDb(db);
+
+    // Sync with Google Sheet BEATS tab
+    await writeAllBeatsToSheet(db.beats);
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: newBeat };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[ADD BEAT ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
+  }
 }
 
-export async function updateBeat(id: string, updatedData: any) {
-  const db = readDb();
-  const index = (db.beats || []).findIndex((b: any) => b.id === id);
-  if (index === -1) {
-    throw new Error("Beat not found");
-  }
-
-  const currentBeat = db.beats[index];
-  const safeCoverUrl =
-    typeof updatedData.coverUrl === "string" && updatedData.coverUrl.trim() !== ""
-      ? updatedData.coverUrl
-      : currentBeat.coverUrl || "/placeholder-cover.png";
-  const safeAudioUrl =
-    typeof updatedData.audioUrl === "string"
-      ? updatedData.audioUrl
-      : currentBeat.audioUrl || "";
-
-  const updatedBeat = {
-    ...currentBeat,
-    title: updatedData.title !== undefined ? String(updatedData.title) : currentBeat.title,
-    producer: updatedData.producer !== undefined ? String(updatedData.producer) : currentBeat.producer,
-    bpm: updatedData.bpm !== undefined ? Number(updatedData.bpm) : currentBeat.bpm,
-    key: updatedData.key !== undefined ? String(updatedData.key) : currentBeat.key,
-    genre: updatedData.genre !== undefined ? String(updatedData.genre) : currentBeat.genre,
-    price: updatedData.price !== undefined ? Number(updatedData.price) : currentBeat.price,
-    buyLink: updatedData.buyLink !== undefined ? String(updatedData.buyLink) : currentBeat.buyLink,
-    description: updatedData.description !== undefined ? String(updatedData.description) : currentBeat.description,
-    coverUrl: safeCoverUrl,
-    audioUrl: safeAudioUrl,
-    moodTags:
-      typeof updatedData.moodTags === "string"
-        ? updatedData.moodTags.split(",").map((t: string) => t.trim())
-        : Array.isArray(updatedData.moodTags)
-          ? updatedData.moodTags.map(String)
-          : currentBeat.moodTags || [],
-  };
-
-  db.beats[index] = updatedBeat;
-  writeDb(db);
-
-  // Sync to Google Sheet BEATS tab
+export async function updateBeat(id: string, updatedData: any): Promise<ActionResponse> {
   try {
-    await writeAllBeatsToSheet(db.beats);
-  } catch (e: any) {
-    console.error("Failed to sync updated beat to Google Sheet:", e);
-    throw new Error(e?.message || "SHEETS_SYNC_FAILED");
-  }
+    const db = readDb();
+    const index = (db.beats || []).findIndex((b: any) => b.id === id);
+    if (index === -1) {
+      return { ok: false, error: "BEAT_NOT_FOUND: Beat ID does not exist" };
+    }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  return updatedBeat;
+    const currentBeat = db.beats[index];
+    const safeCoverUrl =
+      typeof updatedData.coverUrl === "string" && updatedData.coverUrl.trim() !== ""
+        ? updatedData.coverUrl
+        : currentBeat.coverUrl || "/placeholder-cover.png";
+    const safeAudioUrl =
+      typeof updatedData.audioUrl === "string"
+        ? updatedData.audioUrl
+        : currentBeat.audioUrl || "";
+
+    const updatedBeat = {
+      ...currentBeat,
+      title: updatedData.title !== undefined ? String(updatedData.title) : currentBeat.title,
+      producer: updatedData.producer !== undefined ? String(updatedData.producer) : currentBeat.producer,
+      bpm: updatedData.bpm !== undefined ? Number(updatedData.bpm) : currentBeat.bpm,
+      key: updatedData.key !== undefined ? String(updatedData.key) : currentBeat.key,
+      genre: updatedData.genre !== undefined ? String(updatedData.genre) : currentBeat.genre,
+      price: updatedData.price !== undefined ? Number(updatedData.price) : currentBeat.price,
+      buyLink: updatedData.buyLink !== undefined ? String(updatedData.buyLink) : currentBeat.buyLink,
+      description: updatedData.description !== undefined ? String(updatedData.description) : currentBeat.description,
+      coverUrl: safeCoverUrl,
+      audioUrl: safeAudioUrl,
+      moodTags:
+        typeof updatedData.moodTags === "string"
+          ? updatedData.moodTags.split(",").map((t: string) => t.trim())
+          : Array.isArray(updatedData.moodTags)
+            ? updatedData.moodTags.map(String)
+            : currentBeat.moodTags || [],
+    };
+
+    db.beats[index] = updatedBeat;
+    writeDb(db);
+
+    // Sync to Google Sheet BEATS tab
+    await writeAllBeatsToSheet(db.beats);
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: updatedBeat };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[UPDATE BEAT ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
+  }
 }
 
-export async function deleteBeat(id: string) {
-  const db = readDb();
-  db.beats = db.beats.filter((b: any) => b.id !== id);
-  if (!db.deletedIds) db.deletedIds = [];
-  if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
-  writeDb(db);
-
-  // Sync to Google Sheet BEATS tab
+export async function deleteBeat(id: string): Promise<ActionResponse> {
   try {
-    await writeAllBeatsToSheet(db.beats);
-  } catch (e) {
-    console.warn("Failed to sync beat deletion to Google Sheet:", e);
-  }
+    const db = readDb();
+    db.beats = db.beats.filter((b: any) => b.id !== id);
+    if (!db.deletedIds) db.deletedIds = [];
+    if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
+    writeDb(db);
 
-  revalidatePath("/");
-  revalidatePath("/admin");
+    // Sync to Google Sheet BEATS tab
+    await writeAllBeatsToSheet(db.beats);
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: id };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[DELETE BEAT ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
+  }
 }
 
 // ==========================================
@@ -423,75 +486,82 @@ export async function getCustomVideos() {
   return db.videos || [];
 }
 
-export async function addVideo(videoData: any) {
-  const db = readDb();
-  const newVideo = {
-    id: "custom-video-" + Date.now().toString(),
-    title: String(videoData.title || ""),
-    url: String(videoData.url || ""),
-    description: String(videoData.description || ""),
-  };
-  db.videos.push(newVideo);
-  writeDb(db);
-
-  // Sync to Google Sheet PORTFOLIO tab
+export async function addVideo(videoData: any): Promise<ActionResponse> {
   try {
-    await writeAllPortfolioToSheet(db.videos);
-  } catch (e) {
-    console.warn("Failed to sync new video to Google Sheet:", e);
-  }
+    const db = readDb();
+    const newVideo = {
+      id: "custom-video-" + Date.now().toString(),
+      title: String(videoData.title || ""),
+      url: String(videoData.url || ""),
+      description: String(videoData.description || ""),
+    };
+    db.videos.push(newVideo);
+    writeDb(db);
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  return newVideo;
+    // Sync to Google Sheet PORTFOLIO tab
+    await writeAllPortfolioToSheet(db.videos);
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: newVideo };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[ADD VIDEO ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
+  }
 }
 
-export async function updateVideo(id: string, updatedData: any) {
-  const db = readDb();
-  const index = (db.videos || []).findIndex((v: any) => v.id === id);
-  if (index === -1) {
-    throw new Error("Video not found");
-  }
-
-  const currentVideo = db.videos[index];
-  const updatedVideo = {
-    ...currentVideo,
-    title: updatedData.title !== undefined ? String(updatedData.title) : currentVideo.title,
-    url: updatedData.url !== undefined ? String(updatedData.url) : currentVideo.url,
-    description: updatedData.description !== undefined ? String(updatedData.description) : currentVideo.description,
-  };
-
-  db.videos[index] = updatedVideo;
-  writeDb(db);
-
-  // Sync to Google Sheet PORTFOLIO tab
+export async function updateVideo(id: string, updatedData: any): Promise<ActionResponse> {
   try {
-    await writeAllPortfolioToSheet(db.videos);
-  } catch (e) {
-    console.warn("Failed to sync updated video to Google Sheet:", e);
-  }
+    const db = readDb();
+    const index = (db.videos || []).findIndex((v: any) => v.id === id);
+    if (index === -1) {
+      return { ok: false, error: "VIDEO_NOT_FOUND: Video ID not found" };
+    }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  return updatedVideo;
+    const currentVideo = db.videos[index];
+    const updatedVideo = {
+      ...currentVideo,
+      title: updatedData.title !== undefined ? String(updatedData.title) : currentVideo.title,
+      url: updatedData.url !== undefined ? String(updatedData.url) : currentVideo.url,
+      description: updatedData.description !== undefined ? String(updatedData.description) : currentVideo.description,
+    };
+
+    db.videos[index] = updatedVideo;
+    writeDb(db);
+
+    // Sync to Google Sheet PORTFOLIO tab
+    await writeAllPortfolioToSheet(db.videos);
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: updatedVideo };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[UPDATE VIDEO ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
+  }
 }
 
-export async function deleteVideo(id: string) {
-  const db = readDb();
-  db.videos = db.videos.filter((v: any) => v.id !== id);
-  if (!db.deletedIds) db.deletedIds = [];
-  if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
-  writeDb(db);
-
-  // Sync to Google Sheet PORTFOLIO tab
+export async function deleteVideo(id: string): Promise<ActionResponse> {
   try {
-    await writeAllPortfolioToSheet(db.videos);
-  } catch (e) {
-    console.warn("Failed to sync video deletion to Google Sheet:", e);
-  }
+    const db = readDb();
+    db.videos = db.videos.filter((v: any) => v.id !== id);
+    if (!db.deletedIds) db.deletedIds = [];
+    if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
+    writeDb(db);
 
-  revalidatePath("/");
-  revalidatePath("/admin");
+    // Sync to Google Sheet PORTFOLIO tab
+    await writeAllPortfolioToSheet(db.videos);
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: id };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[DELETE VIDEO ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
+  }
 }
 
 // ==========================================
@@ -521,59 +591,64 @@ export async function getCustomTransmissions() {
   return INSTAGRAM_TRANSMISSIONS;
 }
 
-export async function addTransmission(data: any) {
-  const db = readDb();
-  if (!Array.isArray(db.instagramTransmissions)) {
-    db.instagramTransmissions = [...INSTAGRAM_TRANSMISSIONS];
-  }
-  const newTx = {
-    id: "tx-" + Date.now().toString(),
-    camCode: String(data.camCode || "CAM-" + Math.floor(Math.random() * 90 + 10) + " // FEED"),
-    category: data.category || "cookup",
-    caption: String(data.caption || ""),
-    timestamp: "Just now",
-    likes: Number(data.likes) || 100,
-    comments: Number(data.comments) || 12,
-    postUrl: String(data.postUrl || "https://www.instagram.com/amitdied/"),
-    imageUrl: String(
-      data.imageUrl ||
-        "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1000&auto=format&fit=crop"
-    ),
-    videoSnippetTitle: data.videoSnippetTitle
-      ? String(data.videoSnippetTitle)
-      : "TRANSMISSION_RAW.WAV",
-    tags: Array.isArray(data.tags) ? data.tags : ["#amitdied", "#darktrap"],
-  };
-  db.instagramTransmissions.unshift(newTx);
-  writeDb(db);
-
-  // Sync to Google Sheet CCTV tab
+export async function addTransmission(data: any): Promise<ActionResponse> {
   try {
-    await writeAllCctvToSheet(db.instagramTransmissions);
-  } catch (e) {
-    console.warn("Failed to sync new transmission to Google Sheet:", e);
-  }
-
-  revalidatePath("/");
-  revalidatePath("/admin");
-  return newTx;
-}
-
-export async function deleteTransmission(id: string) {
-  const db = readDb();
-  if (Array.isArray(db.instagramTransmissions)) {
-    db.instagramTransmissions = db.instagramTransmissions.filter(
-      (t: any) => t.id !== id
-    );
+    const db = readDb();
+    if (!Array.isArray(db.instagramTransmissions)) {
+      db.instagramTransmissions = [...INSTAGRAM_TRANSMISSIONS];
+    }
+    const newTx = {
+      id: "tx-" + Date.now().toString(),
+      camCode: String(data.camCode || "CAM-" + Math.floor(Math.random() * 90 + 10) + " // FEED"),
+      category: data.category || "cookup",
+      caption: String(data.caption || ""),
+      timestamp: "Just now",
+      likes: Number(data.likes) || 100,
+      comments: Number(data.comments) || 12,
+      postUrl: String(data.postUrl || "https://www.instagram.com/amitdied/"),
+      imageUrl: String(
+        data.imageUrl ||
+          "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1000&auto=format&fit=crop"
+      ),
+      videoSnippetTitle: data.videoSnippetTitle
+        ? String(data.videoSnippetTitle)
+        : "TRANSMISSION_RAW.WAV",
+      tags: Array.isArray(data.tags) ? data.tags : ["#amitdied", "#darktrap"],
+    };
+    db.instagramTransmissions.unshift(newTx);
     writeDb(db);
 
     // Sync to Google Sheet CCTV tab
-    try {
-      await writeAllCctvToSheet(db.instagramTransmissions);
-    } catch (e) {
-      console.warn("Failed to sync transmission deletion to Google Sheet:", e);
-    }
+    await writeAllCctvToSheet(db.instagramTransmissions);
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: newTx };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[ADD TRANSMISSION ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
   }
-  revalidatePath("/");
-  revalidatePath("/admin");
+}
+
+export async function deleteTransmission(id: string): Promise<ActionResponse> {
+  try {
+    const db = readDb();
+    if (Array.isArray(db.instagramTransmissions)) {
+      db.instagramTransmissions = db.instagramTransmissions.filter(
+        (t: any) => t.id !== id
+      );
+      writeDb(db);
+
+      // Sync to Google Sheet CCTV tab
+      await writeAllCctvToSheet(db.instagramTransmissions);
+    }
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: id };
+  } catch (e: any) {
+    const safeError = formatSafeError(e);
+    console.error("[DELETE TRANSMISSION ERROR]", safeError, e?.message);
+    return { ok: false, error: safeError };
+  }
 }

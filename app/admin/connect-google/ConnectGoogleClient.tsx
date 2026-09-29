@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Copy, Check, ArrowLeft, Shield, HardDrive, KeyRound } from 'lucide-react';
+import { useState } from 'react';
+import { Copy, Check, ArrowLeft, Shield, HardDrive, KeyRound, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { clearConnectCookie } from './actions';
 
@@ -12,21 +12,31 @@ export default function ConnectGoogleClient({
   initialRefreshToken?: string | null;
   errorMessage?: string | null;
 }) {
+  const [token, setToken] = useState<string | null>(initialRefreshToken || null);
   const [copied, setCopied] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [cleared, setCleared] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
-  // Consume the cookie immediately on mount so it is shown only once
-  useEffect(() => {
-    if (initialRefreshToken) {
-      clearConnectCookie().catch(() => {});
-    }
-  }, [initialRefreshToken]);
-
   const handleCopy = () => {
-    if (!initialRefreshToken) return;
-    navigator.clipboard.writeText(initialRefreshToken);
+    if (!token) return;
+    navigator.clipboard.writeText(token);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
+  };
+
+  const handleDone = async () => {
+    setIsClearing(true);
+    try {
+      await clearConnectCookie();
+      setCleared(true);
+      setToken(null);
+    } catch {
+      setCleared(true);
+      setToken(null);
+    } finally {
+      setIsClearing(false);
+    }
   };
 
   const handleConnect = () => {
@@ -64,16 +74,19 @@ export default function ConnectGoogleClient({
 
         {errorMessage && (
           <div className="mb-6 p-4 rounded-xl bg-red-950/40 border border-red-800/80 text-left space-y-1">
-            <div className="text-xs font-bold text-red-400 uppercase tracking-wider">
-              Connection Notice: {errorMessage}
+            <div className="flex items-center gap-2 text-xs font-bold text-red-400 uppercase tracking-wider">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Connection Notice: {errorMessage}</span>
             </div>
             <p className="text-xs text-red-300/80">
-              Google did not return a refresh token. Click the button below to re-consent with offline access.
+              {errorMessage === 'NO_REFRESH_TOKEN_RETURNED'
+                ? 'Google did not return a refresh token. This happens if authorization was granted without prompt=consent. Click the button below to re-consent.'
+                : `OAuth connection error: ${errorMessage}`}
             </p>
           </div>
         )}
 
-        {initialRefreshToken ? (
+        {token ? (
           <div className="space-y-4">
             <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-800/60 space-y-3">
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
@@ -87,24 +100,52 @@ export default function ConnectGoogleClient({
               <div className="relative">
                 <textarea
                   readOnly
-                  value={initialRefreshToken}
+                  value={token}
                   rows={3}
                   className="w-full bg-black/90 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-200 select-all outline-none resize-none break-all"
                 />
               </div>
 
-              <button
-                onClick={handleCopy}
-                className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors uppercase tracking-wider"
-              >
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                <span>{copied ? 'Copied to Clipboard!' : 'Copy Refresh Token'}</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleCopy}
+                  className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors uppercase tracking-wider"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span>{copied ? 'Copied!' : 'Copy Token'}</span>
+                </button>
+                <button
+                  onClick={handleDone}
+                  disabled={isClearing}
+                  className="py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors uppercase tracking-wider disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Done, I copied it</span>
+                </button>
+              </div>
             </div>
 
             <p className="text-[11px] text-zinc-500 text-center font-mono">
-              The temporary cookie has now been deleted. Add this token in Vercel Project Settings &gt; Environment Variables.
+              Press &ldquo;Done, I copied it&rdquo; to delete the temporary cookie, or it will expire automatically in 5 minutes.
             </p>
+          </div>
+        ) : cleared ? (
+          <div className="space-y-6">
+            <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-2 text-center">
+              <div className="flex items-center justify-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                <Check className="w-4 h-4" />
+                <span>Token Cleared From Browser</span>
+              </div>
+              <p className="text-xs text-zinc-400">
+                The temporary cookie was deleted. Make sure to paste the token into Vercel as <code className="text-red-400 font-mono">GOOGLE_REFRESH_TOKEN</code> and redeploy.
+              </p>
+            </div>
+            <Link
+              href="/admin"
+              className="block w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white text-center font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+            >
+              Return to Admin Dashboard
+            </Link>
           </div>
         ) : (
           <div className="space-y-6">
@@ -114,7 +155,7 @@ export default function ConnectGoogleClient({
                 <span>Authorized Account: AMITDIED69@gmail.com</span>
               </div>
               <p className="text-[11px] leading-relaxed">
-                Clicking the button will open Google OAuth consent screen with offline access. Once granted, your refresh token will be displayed once for you to add to Vercel.
+                Clicking the button will open Google OAuth consent screen with offline access. Once granted, your refresh token will be displayed here for you to add to Vercel.
               </p>
             </div>
 

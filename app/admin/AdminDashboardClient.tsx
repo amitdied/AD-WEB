@@ -93,6 +93,10 @@ export default function AdminDashboardClient({ adminUser }: { adminUser?: any })
     setSyncMessage(null);
     try {
       const result = await syncWithGoogleSheet();
+      if (!result.ok) {
+        alert("Google Sheet sync error: " + result.error);
+        return;
+      }
       setSyncMessage(result.message);
       setTimeout(() => setSyncMessage(null), 5000);
     } catch (err: any) {
@@ -442,7 +446,13 @@ function BeatsManager() {
         const formData = new FormData();
         formData.append("file", coverFile);
         formData.append("folderType", "covers");
-        coverUrl = await uploadFile(formData, "covers");
+        const uploadRes = await uploadFile(formData, "covers");
+        if (!uploadRes.ok) {
+          alert("Failed to save beat: " + uploadRes.error);
+          setIsUploading(false);
+          return;
+        }
+        coverUrl = uploadRes.url;
       }
 
       // Upload Audio to Google Drive AUDIO folder (1E3no0R-HSGpK_ihIaDMzLutTs3HwD02s)
@@ -450,10 +460,21 @@ function BeatsManager() {
         const formData = new FormData();
         formData.append("file", audioFile);
         formData.append("folderType", "audio");
-        audioUrl = await uploadFile(formData, "audio");
+        const uploadRes = await uploadFile(formData, "audio");
+        if (!uploadRes.ok) {
+          alert("Failed to save beat: " + uploadRes.error);
+          setIsUploading(false);
+          return;
+        }
+        audioUrl = uploadRes.url;
       }
 
-      await addBeat({ ...newBeat, coverUrl, audioUrl });
+      const addRes = await addBeat({ ...newBeat, coverUrl, audioUrl });
+      if (!addRes.ok) {
+        alert("Failed to save beat: " + addRes.error);
+        setIsUploading(false);
+        return;
+      }
 
       const beatsAfter = await getCustomBeats();
       setBeats(beatsAfter);
@@ -507,7 +528,13 @@ function BeatsManager() {
         const formData = new FormData();
         formData.append("file", editCoverFile);
         formData.append("folderType", "covers");
-        coverUrl = await uploadFile(formData, "covers");
+        const uploadRes = await uploadFile(formData, "covers");
+        if (!uploadRes.ok) {
+          alert("Failed to update beat: " + uploadRes.error);
+          setIsUpdating(false);
+          return;
+        }
+        coverUrl = uploadRes.url;
       }
 
       // Upload replace audio to AUDIO folder
@@ -515,14 +542,25 @@ function BeatsManager() {
         const formData = new FormData();
         formData.append("file", editAudioFile);
         formData.append("folderType", "audio");
-        audioUrl = await uploadFile(formData, "audio");
+        const uploadRes = await uploadFile(formData, "audio");
+        if (!uploadRes.ok) {
+          alert("Failed to update beat: " + uploadRes.error);
+          setIsUpdating(false);
+          return;
+        }
+        audioUrl = uploadRes.url;
       }
 
-      await updateBeat(editingBeat.id, {
+      const updateRes = await updateBeat(editingBeat.id, {
         ...editingBeat,
         coverUrl,
         audioUrl,
       });
+      if (!updateRes.ok) {
+        alert("Failed to update beat: " + updateRes.error);
+        setIsUpdating(false);
+        return;
+      }
 
       const updated = await getCustomBeats();
       setBeats(updated);
@@ -540,7 +578,11 @@ function BeatsManager() {
     if (e) e.preventDefault();
     if (!confirm("Are you sure you want to delete this beat from the store & Google Sheet?")) return;
     try {
-      await deleteBeat(id);
+      const deleteRes = await deleteBeat(id);
+      if (!deleteRes.ok) {
+        alert("Failed to delete beat: " + deleteRes.error);
+        return;
+      }
       const updatedBeats = await getCustomBeats();
       setBeats(updatedBeats);
       if (editingBeat?.id === id) setEditingBeat(null);
@@ -1091,7 +1133,11 @@ function VideosManager() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newVideo.url) {
-      await addVideo(newVideo);
+      const res = await addVideo(newVideo);
+      if (!res.ok) {
+        alert("Failed to add video: " + res.error);
+        return;
+      }
       setIsAdding(false);
       setNewVideo({ title: "", url: "", description: "" });
       loadVideos();
@@ -1108,7 +1154,12 @@ function VideosManager() {
     if (!editingVideo) return;
     setIsUpdatingVideo(true);
     try {
-      await updateVideo(editingVideo.id, editingVideo);
+      const res = await updateVideo(editingVideo.id, editingVideo);
+      if (!res.ok) {
+        alert("Failed to update video: " + res.error);
+        setIsUpdatingVideo(false);
+        return;
+      }
       const updated = await getCustomVideos();
       setVideos(updated);
       setEditingVideo(null);
@@ -1124,7 +1175,11 @@ function VideosManager() {
     if (e) e.preventDefault();
     if (!confirm("Are you sure you want to delete this video from the portfolio & Google Sheet?")) return;
     try {
-      await deleteVideo(id);
+      const res = await deleteVideo(id);
+      if (!res.ok) {
+        alert("Failed to delete video: " + res.error);
+        return;
+      }
       const updatedVideos = await getCustomVideos();
       setVideos(updatedVideos);
       if (editingVideo?.id === id) setEditingVideo(null);
@@ -1463,7 +1518,13 @@ function TransmissionsManager() {
         const formData = new FormData();
         formData.append("file", mediaFile);
         formData.append("folderType", "media");
-        imageUrl = await uploadFile(formData, "media");
+        const uploadRes = await uploadFile(formData, "media");
+        if (!uploadRes.ok) {
+          alert("Failed to upload media: " + uploadRes.error);
+          setIsUploading(false);
+          return;
+        }
+        imageUrl = uploadRes.url;
       }
 
       if (!newTx.caption || (!imageUrl && !mediaFile)) {
@@ -1472,11 +1533,16 @@ function TransmissionsManager() {
         return;
       }
 
-      await addTransmission({
+      const res = await addTransmission({
         ...newTx,
         imageUrl,
         tags: ["#amitdied", "#darktrap", "#producertransmission"],
       });
+      if (!res.ok) {
+        alert("Failed to add transmission: " + res.error);
+        setIsUploading(false);
+        return;
+      }
 
       setIsAdding(false);
       setMediaFile(null);
@@ -1493,7 +1559,7 @@ function TransmissionsManager() {
       loadData();
       alert("Transmission published & synced to Google Drive MEDIA & Google Sheet!");
     } catch (e: any) {
-      alert("Failed to add transmission: " + e.message);
+      alert("Failed to add transmission: " + (e.message || "Unknown error"));
     } finally {
       setIsUploading(false);
     }
@@ -1502,10 +1568,14 @@ function TransmissionsManager() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this transmission from CCTV & Google Sheet?")) return;
     try {
-      await deleteTransmission(id);
+      const res = await deleteTransmission(id);
+      if (!res.ok) {
+        alert("Failed to delete transmission: " + res.error);
+        return;
+      }
       loadData();
     } catch (e: any) {
-      alert("Failed to delete transmission: " + e.message);
+      alert("Failed to delete transmission: " + (e.message || "Unknown error"));
     }
   };
 

@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const isConnect = req.nextUrl.searchParams.get('mode') === 'connect';
-    const state = generateOAuthState();
-    const stateCookieValue = isConnect ? `${state}:connect` : state;
+    const rawState = generateOAuthState();
+    const state = isConnect ? `${rawState}.connect` : rawState;
 
     const redirectUri = GOOGLE_CONFIG.REDIRECT_URI;
 
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const response = NextResponse.redirect(authUrl.toString());
 
     // Secure HTTP-only state cookie for CSRF and mode tracking
-    response.cookies.set(STATE_COOKIE_NAME, stateCookieValue, {
+    response.cookies.set(STATE_COOKIE_NAME, state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
