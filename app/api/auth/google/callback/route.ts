@@ -8,7 +8,7 @@ import {
   saveStoredTokens,
   signSessionPayload,
 } from '@/lib/google/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export const dynamic = 'force-dynamic';
@@ -103,6 +103,15 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Diagnostic log (SAFE: non-secret diagnostics only, NEVER log tokens or credentials)
+    console.log('[AUTH DIAGNOSTIC] Token exchange response:', {
+      hasAccessToken: Boolean(tokens.access_token),
+      hasRefreshToken: Boolean(tokens.refresh_token),
+      scope: tokens.scope || 'none',
+      tokenType: tokens.token_type || 'none',
+      mode: isConnectMode ? 'connect' : 'login',
+    });
+
     // 5. Fetch user profile from Google to verify email
     let userInfo;
     try {
@@ -135,6 +144,7 @@ export async function GET(req: NextRequest) {
 
     // Persist refresh token server-side into Firestore settings/google_drive_auth
     if (tokens.refresh_token) {
+      console.log('[AUTH] Refresh token received from Google');
       try {
         const authDocRef = doc(db, 'settings', 'google_drive_auth');
         await setDoc(
@@ -145,9 +155,29 @@ export async function GET(req: NextRequest) {
           },
           { merge: true }
         );
-      } catch (fsErr) {
-        console.error('[AUTH ERROR] Failed to save refresh token to Firestore');
+        console.log('[AUTH] Refresh token persisted successfully');
+
+        // SAFE verification readback immediately after successful setDoc (NEVER logs token value)
+        try {
+          const verifySnap = await getDoc(authDocRef);
+          console.log('[AUTH VERIFICATION] settings/google_drive_auth:', {
+            exists: verifySnap.exists(),
+            hasRefreshToken: Boolean(verifySnap.exists() && verifySnap.data()?.refreshToken),
+          });
+        } catch (verifyErr: any) {
+          console.error(
+            '[AUTH VERIFICATION ERROR] Failed to read back auth document:',
+            verifyErr?.code || verifyErr?.message || 'unknown_error'
+          );
+        }
+      } catch (fsErr: any) {
+        console.error(
+          '[AUTH] Refresh token persistence FAILED',
+          fsErr?.code || fsErr?.message || 'unknown_error'
+        );
       }
+    } else {
+      console.log('[AUTH] Google returned NO refresh token');
     }
 
     // Sign session token for authenticated admin session
