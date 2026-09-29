@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabase, isValidSupabaseUrl } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,8 +10,12 @@ async function testSupabaseStorageConnection(): Promise<{
   details?: Record<string, boolean>;
   itemsFound?: number;
 }> {
-  const hasUrl = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const hasKey = Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+
+  const hasUrl = Boolean(rawUrl);
+  const hasKey = Boolean(rawKey);
+  const isUrlValid = isValidSupabaseUrl(rawUrl);
 
   if (!hasUrl || !hasKey) {
     const errorMsg = 'MISSING_ENV_VARS: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is not defined in this environment';
@@ -22,13 +26,41 @@ async function testSupabaseStorageConnection(): Promise<{
       details: {
         hasNextPublicSupabaseUrl: hasUrl,
         hasNextPublicSupabaseAnonKey: hasKey,
+        isUrlValid: false,
+      },
+    };
+  }
+
+  if (!isUrlValid) {
+    const errorMsg = 'INVALID_ENV_VAR: NEXT_PUBLIC_SUPABASE_URL must start with http:// or https:// and be a valid URL';
+    console.warn('[SUPABASE_TEST]', errorMsg);
+    return {
+      ok: false,
+      error: errorMsg,
+      details: {
+        hasNextPublicSupabaseUrl: true,
+        hasNextPublicSupabaseAnonKey: hasKey,
+        isUrlValid: false,
+      },
+    };
+  }
+
+  const supabaseClient = getSupabase();
+  if (!supabaseClient) {
+    return {
+      ok: false,
+      error: 'INITIALIZATION_FAILED: Could not initialize Supabase client with provided environment variables',
+      details: {
+        hasNextPublicSupabaseUrl: true,
+        hasNextPublicSupabaseAnonKey: true,
+        isUrlValid: true,
       },
     };
   }
 
   try {
-    // Harmless operation: list root items from 'covers' bucket without modifying anything
-    const { data, error } = await supabase.storage.from('covers').list('', {
+    // Harmless operation: list root items from existing 'covers' bucket without modifying anything
+    const { data, error } = await supabaseClient.storage.from('covers').list('', {
       limit: 1,
       offset: 0,
     });
@@ -59,5 +91,9 @@ async function testSupabaseStorageConnection(): Promise<{
 
 export async function GET() {
   const result = await testSupabaseStorageConnection();
-  return NextResponse.json(result, { status: result.ok ? 200 : (result.error?.startsWith('MISSING_ENV') ? 503 : 400) });
+  const isEnvIssue =
+    result.error?.startsWith('MISSING_ENV') ||
+    result.error?.startsWith('INVALID_ENV') ||
+    result.error?.startsWith('INITIALIZATION_FAILED');
+  return NextResponse.json(result, { status: result.ok ? 200 : (isEnvIssue ? 503 : 400) });
 }
