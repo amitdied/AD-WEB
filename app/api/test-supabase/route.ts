@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-export async function testSupabaseStorageConnection(): Promise<{
+async function testSupabaseStorageConnection(): Promise<{
   ok: boolean;
   message?: string;
   error?: string;
