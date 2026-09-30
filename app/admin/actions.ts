@@ -1,8 +1,22 @@
 'use server';
 
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { SESSION_COOKIE_NAME, getAdminSession } from '@/lib/google/auth';
+import {
+  verifyAdminPassword,
+  createAdminSession,
+  destroyAdminSession,
+  getAdminSession,
+} from '@/lib/auth';
+
+export async function loginWithPassword(password: string): Promise<{ ok: boolean; error?: string }> {
+  const result = await verifyAdminPassword(password);
+  if (!result.ok) {
+    return result;
+  }
+
+  await createAdminSession();
+  return { ok: true };
+}
 
 export async function checkSession() {
   const session = await getAdminSession();
@@ -10,7 +24,6 @@ export async function checkSession() {
 }
 
 export async function logout() {
-  const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  await destroyAdminSession();
   redirect('/admin/login');
 }

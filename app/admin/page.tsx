@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getAdminSession } from '@/lib/google/auth';
+import { getAdminSession } from '@/lib/auth';
 import AdminDashboardClient from './AdminDashboardClient';
 
 export const dynamic = 'force-dynamic';

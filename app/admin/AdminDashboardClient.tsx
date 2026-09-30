@@ -135,7 +135,7 @@ export default function AdminDashboardClient({ adminUser }: { adminUser?: any })
       <div className="md:hidden flex items-center justify-between p-4 border-b border-zinc-800 bg-zinc-950">
         <div>
           <h1 className="text-lg font-display font-bold">AMITDIED Admin</h1>
-          <span className="text-[10px] text-zinc-500 font-mono">Google OAuth Active</span>
+          <span className="text-[10px] text-emerald-400 font-mono">Password Authenticated</span>
         </div>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}

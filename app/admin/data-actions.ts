@@ -13,7 +13,8 @@ import {
   readCctvFromSheet,
   writeAllCctvToSheet,
 } from "@/lib/google/sheets";
-import { getAdminSession, getStoredTokens } from "@/lib/google/auth";
+import { getStoredTokens } from "@/lib/google/auth";
+import { getAdminSession } from "@/lib/auth";
 import { GOOGLE_CONFIG } from "@/lib/google/config";
 import {
   collection,
@@ -112,6 +113,11 @@ export async function checkDbStatus() {
 }
 
 export async function initializeDb() {
+  const session = await getAdminSession();
+  if (!session || !session.isAuthenticated) {
+    throw new Error("UNAUTHORIZED: Admin session required");
+  }
+
   let db = readDb();
   if (!fs.existsSync(DB_PATH)) {
     db = {
@@ -190,6 +196,11 @@ export async function uploadFile(
   folderTypeOverride?: DriveFolderType
 ): Promise<UploadResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const file = formData.get("file") as File;
     if (!file) {
       return { ok: false, error: "MISSING_FILE: No file provided" };
@@ -269,6 +280,11 @@ export type SyncResponse =
 
 export async function syncWithGoogleSheet(): Promise<SyncResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const db = readDb();
     let syncedFromSheet = false;
 
@@ -372,6 +388,11 @@ export type ActionResponse<T = any> =
 
 export async function addBeat(beat: any): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const safeCoverUrl =
       typeof beat.coverUrl === "string" && beat.coverUrl.trim() !== ""
         ? beat.coverUrl
@@ -431,6 +452,11 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
 
 export async function updateBeat(id: string, updatedData: any): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const beatsRef = collection(db, "beats");
     const q = query(beatsRef, where("id", "==", id));
     const snapshot = await getDocs(q);
@@ -497,6 +523,11 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
 
 export async function deleteBeat(id: string): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const beatsRef = collection(db, "beats");
     const q = query(beatsRef, where("id", "==", id));
     const snapshot = await getDocs(q);
@@ -545,6 +576,11 @@ export async function getCustomVideos() {
 
 export async function addVideo(videoData: any): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const db = readDb();
     const newVideo = {
       id: "custom-video-" + Date.now().toString(),
@@ -570,6 +606,11 @@ export async function addVideo(videoData: any): Promise<ActionResponse> {
 
 export async function updateVideo(id: string, updatedData: any): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const db = readDb();
     const index = (db.videos || []).findIndex((v: any) => v.id === id);
     if (index === -1) {
@@ -602,6 +643,11 @@ export async function updateVideo(id: string, updatedData: any): Promise<ActionR
 
 export async function deleteVideo(id: string): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const db = readDb();
     db.videos = db.videos.filter((v: any) => v.id !== id);
     if (!db.deletedIds) db.deletedIds = [];
@@ -650,6 +696,11 @@ export async function getCustomTransmissions() {
 
 export async function addTransmission(data: any): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const db = readDb();
     if (!Array.isArray(db.instagramTransmissions)) {
       db.instagramTransmissions = [...INSTAGRAM_TRANSMISSIONS];
@@ -690,6 +741,11 @@ export async function addTransmission(data: any): Promise<ActionResponse> {
 
 export async function deleteTransmission(id: string): Promise<ActionResponse> {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
     const db = readDb();
     if (Array.isArray(db.instagramTransmissions)) {
       db.instagramTransmissions = db.instagramTransmissions.filter(

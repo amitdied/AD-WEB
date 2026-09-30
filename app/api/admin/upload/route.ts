@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadToGoogleDrive, DriveFolderType } from "@/lib/google/drive";
+import { getAdminSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,14 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getAdminSession();
+    if (!session || !session.isAuthenticated) {
+      return NextResponse.json(
+        { ok: false, error: "UNAUTHORIZED: Admin session required" },
+        { status: 401 }
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 

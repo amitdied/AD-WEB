@@ -240,15 +240,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
   }
 
   const payload = verifySessionToken(sessionCookie.value);
-  if (!payload || !payload.email) {
-    return null;
-  }
-
-  const normalizedEmail = String(payload.email).toLowerCase().trim();
-  const allowedEmail = GOOGLE_CONFIG.ADMIN_EMAIL.toLowerCase().trim();
-
-  // Strict check: ONLY AMITDIED69@gmail.com
-  if (normalizedEmail !== allowedEmail) {
+  if (!payload) {
     return null;
   }
 
@@ -256,7 +248,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
 
   return {
     isAuthenticated: true,
-    email: payload.email,
+    email: payload.email || GOOGLE_CONFIG.ADMIN_EMAIL,
     name: payload.name || 'AMITDIED',
     picture: payload.picture || '',
     hasGoogleTokens: Boolean(refreshToken || memoryAccessToken),
