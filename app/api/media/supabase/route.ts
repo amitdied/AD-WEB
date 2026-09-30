@@ -23,7 +23,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Sanitize path against directory traversal
     const decodedPath = decodeURIComponent(path).replace(/^\/+/, '');
     if (decodedPath.includes('..')) {
       return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
@@ -37,7 +36,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // For audio files, generating a signed URL allows standard byte-range requests and audio player seeking
     if (bucket === 'audio') {
       const { data: signedData, error: signedError } = await supabase.storage
         .from(bucket)
@@ -48,7 +46,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Direct download/streaming from Supabase Storage (standard for images and audio fallback)
     const { data: blobData, error: downloadError } = await supabase.storage
       .from(bucket)
       .download(decodedPath);
@@ -74,8 +71,35 @@ export async function GET(req: NextRequest) {
             ? 'image/webp'
             : 'image/jpeg');
 
+    const totalSize = blobData.size;
+    const rangeHeader = req.headers.get('range');
+
+    if (rangeHeader && totalSize > 0) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : totalSize - 1;
+        const safeEnd = Math.min(end, totalSize - 1);
+        const chunk = blobData.slice(start, safeEnd + 1);
+
+        const headers = new Headers();
+        headers.set('Content-Type', contentType);
+        headers.set('Content-Range', `bytes ${start}-${safeEnd}/${totalSize}`);
+        headers.set('Accept-Ranges', 'bytes');
+        headers.set('Content-Length', String(chunk.size));
+        headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+
+        return new NextResponse(chunk, {
+          status: 206,
+          headers,
+        });
+      }
+    }
+
     const headers = new Headers();
     headers.set('Content-Type', contentType);
+    headers.set('Content-Length', String(totalSize));
+    headers.set('Accept-Ranges', 'bytes');
     headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
 
     return new NextResponse(blobData, {

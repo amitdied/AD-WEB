@@ -34,9 +34,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [progress, setProgress] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const fixingDurationRef = useRef(false);
 
   useEffect(() => {
-    // 1. Single source of truth HTMLAudioElement
     const audio = new Audio();
     audioRef.current = audio;
 
@@ -46,9 +46,26 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted || !audioRef.current) return;
       const currTime = audio.currentTime;
       const dur = audio.duration;
-      if (Number.isNaN(currTime) || Number.isNaN(dur) || dur <= 0 || !Number.isFinite(dur)) {
+
+      if (Number.isNaN(currTime)) return;
+
+      if (Number.isNaN(dur) || dur <= 0 || !Number.isFinite(dur)) {
+        if (!fixingDurationRef.current && audio.readyState > 0) {
+          fixingDurationRef.current = true;
+          const resumeTime = currTime;
+
+          const handleFixedDuration = () => {
+            audio.removeEventListener("durationchange", handleFixedDuration);
+            audio.currentTime = resumeTime;
+            fixingDurationRef.current = false;
+          };
+
+          audio.addEventListener("durationchange", handleFixedDuration);
+          audio.currentTime = Number.MAX_SAFE_INTEGER;
+        }
         return;
       }
+
       const calcProgress = (currTime / dur) * 100;
       setProgress(Math.max(0, Math.min(100, calcProgress)));
     };
@@ -79,7 +96,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(false);
     };
 
-    // 2. Listen to timeupdate, loadedmetadata, durationchange, ended, play, pause
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("loadedmetadata", handleLoadedMetadata);
     audio.addEventListener("durationchange", handleDurationChange);
@@ -127,7 +143,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 11. When a new beat is selected, reset progress state correctly
     setCurrentTrack(track);
     setProgress(0);
     audio.currentTime = 0;
@@ -146,7 +161,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Mock progress simulation for tracks without audio URL
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isPlaying && currentTrack && !currentTrack.audioUrl) {

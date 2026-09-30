@@ -6,15 +6,18 @@ export default function CustomCursor() {
   const [position, setPosition] = useState({ x: -100, y: -100 });
   const [isVisible, setIsVisible] = useState(false);
   const [isInteractive, setIsInteractive] = useState(false);
-  const [isFinePointer, setIsFinePointer] = useState(false);
+  const [isFinePointer, setIsFinePointer] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.matchMedia("(pointer: fine)").matches;
+    }
+    return false;
+  });
 
   useEffect(() => {
     // Only enable on fine-pointer devices (desktop with mouse)
     if (typeof window === "undefined") return;
-    const isFine = window.matchMedia("(pointer: fine)").matches;
-    if (!isFine) return;
-
-    setIsFinePointer(true);
+    const mediaQuery = window.matchMedia("(pointer: fine)");
+    if (!mediaQuery.matches) return;
 
     const styleEl = document.createElement("style");
     styleEl.id = "custom-cursor-joint-style";
