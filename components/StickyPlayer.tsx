@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { useAudio } from '@/lib/AudioContext';
 import { Play, Pause, SkipForward, SkipBack, Heart, Volume2 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -6,14 +7,42 @@ import Image from 'next/image';
 
 export function StickyPlayer() {
   const { currentTrack, isPlaying, progress, togglePlay, seek } = useAudio();
+  const [isDragging, setIsDragging] = useState(false);
 
   if (!currentTrack) return null;
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+  const calculatePercentage = (clientX: number, target: HTMLElement) => {
+    const rect = target.getBoundingClientRect();
+    const x = clientX - rect.left;
     const percentage = (x / rect.width) * 100;
+    return Math.max(0, Math.min(100, percentage));
+  };
+
+  const handlePointerDown = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    setIsDragging(true);
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const barContainer = e.currentTarget;
+    const percentage = calculatePercentage(clientX, barContainer);
     seek(percentage);
+
+    const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
+      const moveClientX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : (moveEvent as MouseEvent).clientX;
+      const p = calculatePercentage(moveClientX, barContainer);
+      seek(p);
+    };
+
+    const handleUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleUp);
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchend', handleUp);
   };
 
   return (
@@ -24,14 +53,17 @@ export function StickyPlayer() {
     >
       {/* Progress Bar */}
       <div 
-        className="absolute top-0 left-0 right-0 h-1 bg-zinc-800 cursor-pointer group"
-        onClick={handleSeek}
+        className="absolute top-0 left-0 right-0 h-4 flex items-center cursor-pointer group select-none"
+        onMouseDown={handlePointerDown}
+        onTouchStart={handlePointerDown}
       >
-        <div 
-          className="h-full bg-red-600 relative group-hover:bg-red-500 transition-colors"
-          style={{ width: `${progress}%` }}
-        >
-          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className={`w-full bg-zinc-800 group-hover:bg-zinc-700 relative transition-all ${isDragging ? 'h-1.5' : 'h-1'}`}>
+          <div 
+            className={`bg-red-600 relative group-hover:bg-red-500 transition-all ${isDragging ? 'h-1.5 bg-red-500' : 'h-full'}`}
+            style={{ width: `${progress}%` }}
+          >
+            <div className={`absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full transition-opacity ${isDragging ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'}`} />
+          </div>
         </div>
       </div>
 
