@@ -29,6 +29,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const DB_PATH = path.join(process.cwd(), "data", "db.json");
 
@@ -348,34 +349,33 @@ export async function syncWithGoogleSheet(): Promise<SyncResponse> {
 
 export async function getCustomBeats() {
   try {
-    const beatsRef = collection(db, "beats");
-    const q = query(beatsRef, orderBy("createdAt", "desc"));
-    const snapshot = await getDocs(q);
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("beats")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-    if (!snapshot.empty) {
-      return snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: data.id || docSnap.id,
-          title: data.title || "",
-          producer: data.producer || "AMITDIED",
-          bpm: data.bpm || 120,
-          key: data.key || "",
-          genre: data.genre || "",
-          price: typeof data.price === "number" ? data.price : (parseFloat(String(data.price)) || 0),
-          buyLink: data.buyLink || "",
-          description: data.description || "",
-          coverUrl: data.coverUrl || "",
-          audioUrl: data.audioUrl || "",
-          audioStoragePath: data.audioStoragePath || "",
-          coverStoragePath: data.coverStoragePath || "",
-          storageProvider: data.storageProvider || "drive",
-          moodTags: Array.isArray(data.moodTags) ? data.moodTags : [],
-        };
-      });
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map((row: any) => ({
+        id: row.id || '',
+        title: row.title || '',
+        producer: row.producer || 'AMITDIED',
+        bpm: typeof row.bpm === 'number' ? row.bpm : (parseFloat(String(row.bpm)) || 120),
+        key: row.key || '',
+        genre: row.genre || '',
+        price: typeof row.price === 'number' ? row.price : (parseFloat(String(row.price)) || 0),
+        buyLink: row.buy_link || row.buyLink || '',
+        description: row.description || '',
+        coverUrl: row.cover_url || row.coverUrl || '',
+        audioUrl: row.audio_url || row.audioUrl || '',
+        audioStoragePath: row.audio_storage_path || row.audioStoragePath || '',
+        coverStoragePath: row.cover_storage_path || row.coverStoragePath || '',
+        storageProvider: row.storage_provider || row.storageProvider || 'drive',
+        moodTags: Array.isArray(row.mood_tags) ? row.mood_tags : (Array.isArray(row.moodTags) ? row.moodTags : []),
+      }));
     }
   } catch (e) {
-    console.warn("Could not read beats from Firestore, using local DB:", e);
+    console.warn("Could not read beats from Supabase, using local DB:", e);
   }
 
   const localDb = readDb();
@@ -406,8 +406,16 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
           ? parseFloat(String(beat.price))
           : 0;
 
+    const newBeatId = "custom-" + Date.now().toString();
+    const moodTags =
+      typeof beat.moodTags === "string"
+        ? beat.moodTags.split(",").map((t: string) => t.trim())
+        : Array.isArray(beat.moodTags)
+          ? beat.moodTags.map(String)
+          : [];
+
     const newBeat: any = {
-      id: "custom-" + Date.now().toString(),
+      id: newBeatId,
       title: String(beat.title || "Untitled"),
       producer: String(beat.producer || "AMITDIED"),
       bpm: Number(beat.bpm) || 120,
@@ -418,25 +426,36 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
       description: String(beat.description || ""),
       coverUrl: safeCoverUrl,
       audioUrl: safeAudioUrl,
-      moodTags:
-        typeof beat.moodTags === "string"
-          ? beat.moodTags.split(",").map((t: string) => t.trim())
-          : Array.isArray(beat.moodTags)
-            ? beat.moodTags.map(String)
-            : [],
+      moodTags,
+      audioStoragePath: beat.audioStoragePath ? String(beat.audioStoragePath) : "",
+      coverStoragePath: beat.coverStoragePath ? String(beat.coverStoragePath) : "",
+      storageProvider: beat.storageProvider ? String(beat.storageProvider) : "drive",
+      createdAt: new Date().toISOString(),
     };
 
-    if (beat.audioStoragePath) newBeat.audioStoragePath = String(beat.audioStoragePath);
-    if (beat.coverStoragePath) newBeat.coverStoragePath = String(beat.coverStoragePath);
-    if (beat.storageProvider) newBeat.storageProvider = String(beat.storageProvider);
-    if (beat.supabaseAudioBucket) newBeat.supabaseAudioBucket = String(beat.supabaseAudioBucket);
-    if (beat.supabaseCoversBucket) newBeat.supabaseCoversBucket = String(beat.supabaseCoversBucket);
-
-    const beatsRef = collection(db, "beats");
-    await addDoc(beatsRef, {
-      ...newBeat,
-      createdAt: serverTimestamp(),
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("beats").insert({
+      id: newBeat.id,
+      title: newBeat.title,
+      producer: newBeat.producer,
+      bpm: newBeat.bpm,
+      key: newBeat.key,
+      genre: newBeat.genre,
+      price: newBeat.price,
+      buy_link: newBeat.buyLink,
+      description: newBeat.description,
+      cover_url: newBeat.coverUrl,
+      audio_url: newBeat.audioUrl,
+      mood_tags: newBeat.moodTags,
+      audio_storage_path: newBeat.audioStoragePath,
+      cover_storage_path: newBeat.coverStoragePath,
+      storage_provider: newBeat.storageProvider,
+      created_at: newBeat.createdAt,
     });
+
+    if (error) {
+      return { ok: false, error: "SUPABASE_WRITE_FAILED: " + error.message };
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");
@@ -445,7 +464,7 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
     console.error("[ADD BEAT ERROR]", error);
     return {
       ok: false,
-      error: "FIRESTORE_WRITE_FAILED: " + (error?.message || "unknown"),
+      error: "SUPABASE_WRITE_FAILED: " + (error?.message || "unknown"),
     };
   }
 }
@@ -457,57 +476,83 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const beatsRef = collection(db, "beats");
-    const q = query(beatsRef, where("id", "==", id));
-    const snapshot = await getDocs(q);
+    const supabase = getSupabaseAdmin();
+    const { data: existingRows, error: fetchError } = await supabase
+      .from("beats")
+      .select("*")
+      .eq("id", id);
 
-    if (snapshot.empty) {
+    if (fetchError || !existingRows || existingRows.length === 0) {
       return { ok: false, error: "BEAT_NOT_FOUND" };
     }
 
-    const docSnap = snapshot.docs[0];
-    const currentBeat = docSnap.data();
+    const currentBeat = existingRows[0];
+    const currentCoverUrl = currentBeat.cover_url || currentBeat.coverUrl || "/placeholder-cover.png";
+    const currentAudioUrl = currentBeat.audio_url || currentBeat.audioUrl || "";
+    const currentPrice = currentBeat.price || 0;
 
     const safeCoverUrl =
       typeof updatedData.coverUrl === "string" && updatedData.coverUrl.trim() !== ""
         ? updatedData.coverUrl
-        : currentBeat.coverUrl || "/placeholder-cover.png";
+        : currentCoverUrl;
     const safeAudioUrl =
       typeof updatedData.audioUrl === "string"
         ? updatedData.audioUrl
-        : currentBeat.audioUrl || "";
+        : currentAudioUrl;
 
     const exactUpdatedPrice =
       updatedData.price !== undefined
         ? (typeof updatedData.price === "number" ? updatedData.price : (parseFloat(String(updatedData.price)) || 0))
-        : (currentBeat.price || 0);
+        : currentPrice;
+
+    const updatedMoodTags =
+      typeof updatedData.moodTags === "string"
+        ? updatedData.moodTags.split(",").map((t: string) => t.trim())
+        : Array.isArray(updatedData.moodTags)
+          ? updatedData.moodTags.map(String)
+          : (currentBeat.mood_tags || currentBeat.moodTags || []);
 
     const updatedBeat: any = {
-      ...currentBeat,
-      id: currentBeat.id || id,
+      id: id,
       title: updatedData.title !== undefined ? String(updatedData.title) : (currentBeat.title || "Untitled"),
       producer: updatedData.producer !== undefined ? String(updatedData.producer) : (currentBeat.producer || "AMITDIED"),
       bpm: updatedData.bpm !== undefined ? Number(updatedData.bpm) : (currentBeat.bpm || 120),
       key: updatedData.key !== undefined ? String(updatedData.key) : (currentBeat.key || ""),
       genre: updatedData.genre !== undefined ? String(updatedData.genre) : (currentBeat.genre || ""),
       price: exactUpdatedPrice,
-      buyLink: updatedData.buyLink !== undefined ? String(updatedData.buyLink) : (currentBeat.buyLink || ""),
+      buyLink: updatedData.buyLink !== undefined ? String(updatedData.buyLink) : (currentBeat.buy_link || currentBeat.buyLink || ""),
       description: updatedData.description !== undefined ? String(updatedData.description) : (currentBeat.description || ""),
       coverUrl: safeCoverUrl,
       audioUrl: safeAudioUrl,
-      audioStoragePath: updatedData.audioStoragePath || currentBeat.audioStoragePath || "",
-      coverStoragePath: updatedData.coverStoragePath || currentBeat.coverStoragePath || "",
-      storageProvider: updatedData.storageProvider || currentBeat.storageProvider || "drive",
-      moodTags:
-        typeof updatedData.moodTags === "string"
-          ? updatedData.moodTags.split(",").map((t: string) => t.trim())
-          : Array.isArray(updatedData.moodTags)
-            ? updatedData.moodTags.map(String)
-            : currentBeat.moodTags || [],
+      audioStoragePath: updatedData.audioStoragePath || currentBeat.audio_storage_path || currentBeat.audioStoragePath || "",
+      coverStoragePath: updatedData.coverStoragePath || currentBeat.cover_storage_path || currentBeat.coverStoragePath || "",
+      storageProvider: updatedData.storageProvider || currentBeat.storage_provider || currentBeat.storageProvider || "drive",
+      moodTags: updatedMoodTags,
     };
 
-    const { createdAt, ...fieldsToUpdate } = updatedBeat as any;
-    await updateDoc(docSnap.ref, fieldsToUpdate);
+    const { error: updateError } = await supabase
+      .from("beats")
+      .update({
+        title: updatedBeat.title,
+        producer: updatedBeat.producer,
+        bpm: updatedBeat.bpm,
+        key: updatedBeat.key,
+        genre: updatedBeat.genre,
+        price: updatedBeat.price,
+        buy_link: updatedBeat.buyLink,
+        description: updatedBeat.description,
+        cover_url: updatedBeat.coverUrl,
+        audio_url: updatedBeat.audioUrl,
+        mood_tags: updatedBeat.moodTags,
+        audio_storage_path: updatedBeat.audioStoragePath,
+        cover_storage_path: updatedBeat.coverStoragePath,
+        storage_provider: updatedBeat.storageProvider,
+      })
+      .eq("id", id);
+
+    if (updateError) {
+      return { ok: false, error: "SUPABASE_WRITE_FAILED: " + updateError.message };
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");
@@ -516,7 +561,7 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
     console.error("[UPDATE BEAT ERROR]", error);
     return {
       ok: false,
-      error: "FIRESTORE_WRITE_FAILED: " + (error?.message || "unknown"),
+      error: "SUPABASE_WRITE_FAILED: " + (error?.message || "unknown"),
     };
   }
 }
@@ -528,14 +573,14 @@ export async function deleteBeat(id: string): Promise<ActionResponse> {
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const beatsRef = collection(db, "beats");
-    const q = query(beatsRef, where("id", "==", id));
-    const snapshot = await getDocs(q);
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from("beats")
+      .delete()
+      .eq("id", id);
 
-    if (!snapshot.empty) {
-      for (const docSnap of snapshot.docs) {
-        await deleteDoc(docSnap.ref);
-      }
+    if (error) {
+      return { ok: false, error: "SUPABASE_WRITE_FAILED: " + error.message };
     }
 
     revalidatePath("/");
@@ -545,7 +590,7 @@ export async function deleteBeat(id: string): Promise<ActionResponse> {
     console.error("[DELETE BEAT ERROR]", error);
     return {
       ok: false,
-      error: "FIRESTORE_WRITE_FAILED: " + (error?.message || "unknown"),
+      error: "SUPABASE_WRITE_FAILED: " + (error?.message || "unknown"),
     };
   }
 }

@@ -1,43 +1,42 @@
 import { NextResponse } from 'next/server';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { beats as defaultBeats } from '@/lib/data';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const beatsRef = collection(db, 'beats');
-    const q = query(beatsRef, orderBy('createdAt', 'desc'));
-    const snapshot = await getDocs(q);
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from('beats')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (!snapshot.empty) {
-      const beats = snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: data.id || doc.id,
-          title: data.title || '',
-          producer: data.producer || 'AMITDIED',
-          bpm: data.bpm || 120,
-          key: data.key || '',
-          genre: data.genre || '',
-          price: data.price || 0,
-          buyLink: data.buyLink || '',
-          description: data.description || '',
-          coverUrl: data.coverUrl || '',
-          audioUrl: data.audioUrl || '',
-          audioStoragePath: data.audioStoragePath || '',
-          coverStoragePath: data.coverStoragePath || '',
-          storageProvider: data.storageProvider || '',
-          moodTags: Array.isArray(data.moodTags) ? data.moodTags : [],
-        };
-      });
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const beats = data.map((row: any) => ({
+        id: row.id || '',
+        title: row.title || '',
+        producer: row.producer || 'AMITDIED',
+        bpm: typeof row.bpm === 'number' ? row.bpm : (parseFloat(String(row.bpm)) || 120),
+        key: row.key || '',
+        genre: row.genre || '',
+        price: typeof row.price === 'number' ? row.price : (parseFloat(String(row.price)) || 0),
+        buyLink: row.buy_link || row.buyLink || '',
+        description: row.description || '',
+        coverUrl: row.cover_url || row.coverUrl || '',
+        audioUrl: row.audio_url || row.audioUrl || '',
+        audioStoragePath: row.audio_storage_path || row.audioStoragePath || '',
+        coverStoragePath: row.cover_storage_path || row.coverStoragePath || '',
+        storageProvider: row.storage_provider || row.storageProvider || 'drive',
+        moodTags: Array.isArray(row.mood_tags) ? row.mood_tags : (Array.isArray(row.moodTags) ? row.moodTags : []),
+      }));
+
       return NextResponse.json(beats, {
         headers: { 'Cache-Control': 'no-store, max-age=0' },
       });
     }
   } catch (error) {
-    console.error('Error reading beats from Firestore:', error);
+    console.error('Error reading beats from Supabase:', error);
   }
 
   return NextResponse.json(defaultBeats, {
