@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { signSessionPayload, SESSION_COOKIE_NAME } from '@/lib/google/auth';
+import { signSessionPayload, SESSION_COOKIE_NAME, getSessionSecret } from '@/lib/google/auth';
 
 export async function POST(req: Request) {
   try {
@@ -12,20 +11,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Password is required' }, { status: 400 });
     }
 
-    let isValid = false;
-    const adminHashEnv = process.env.ADMIN_PASSWORD_HASH;
+    // Verify SESSION_SECRET is configured
+    try {
+      getSessionSecret();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: 'Server configuration error: SESSION_SECRET is missing.' },
+        { status: 500 }
+      );
+    }
 
-    if (adminHashEnv) {
-      if (adminHashEnv.startsWith('$2')) {
-        isValid = await bcrypt.compare(password, adminHashEnv);
-      } else {
-        const inputHash = crypto.createHash('sha256').update(password).digest('hex');
-        isValid = inputHash === adminHashEnv || password === adminHashEnv || password === process.env.ADMIN_PASSWORD;
-      }
+    // Verify ADMIN_PASSWORD_HASH is configured
+    const adminHashEnv = process.env.ADMIN_PASSWORD_HASH;
+    if (!adminHashEnv || !adminHashEnv.trim()) {
+      return NextResponse.json(
+        { success: false, error: 'Server configuration error: ADMIN_PASSWORD_HASH is missing.' },
+        { status: 500 }
+      );
+    }
+
+    const cleanHash = adminHashEnv.trim();
+    let isValid = false;
+
+    if (cleanHash.startsWith('$2')) {
+      isValid = await bcrypt.compare(password, cleanHash);
     } else {
-      const inputHash = crypto.createHash('sha256').update(password).digest('hex');
-      const defaultHash = crypto.createHash('sha256').update('amitdied123').digest('hex');
-      isValid = inputHash === defaultHash || password === 'amitdied123';
+      // Fallback comparison if not bcrypt
+      isValid = password === cleanHash;
     }
 
     if (!isValid) {
@@ -57,4 +69,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
   }
 }
-

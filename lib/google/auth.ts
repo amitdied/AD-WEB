@@ -4,7 +4,14 @@ import { GOOGLE_CONFIG } from './config';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
-const SESSION_SECRET = process.env.SESSION_SECRET || GOOGLE_CONFIG.CLIENT_SECRET || 'amitdied-secure-oauth-secret-key';
+export function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret || !secret.trim()) {
+    throw new Error('CONFIG_ERROR: SESSION_SECRET environment variable is missing.');
+  }
+  return secret.trim();
+}
+
 export const SESSION_COOKIE_NAME = 'admin_session';
 export const STATE_COOKIE_NAME = 'google_oauth_state';
 
@@ -68,9 +75,10 @@ export function generateOAuthState(): string {
 
 // Create HMAC signature for session token
 export function signSessionPayload(payload: object): string {
+  const secret = getSessionSecret();
   const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', SESSION_SECRET)
+    .createHmac('sha256', secret)
     .update(data)
     .digest('base64url');
   return `${data}.${signature}`;
@@ -79,11 +87,12 @@ export function signSessionPayload(payload: object): string {
 // Verify HMAC session token
 export function verifySessionToken(token: string): any | null {
   try {
+    const secret = getSessionSecret();
     const [data, signature] = token.split('.');
     if (!data || !signature) return null;
 
     const expectedSig = crypto
-      .createHmac('sha256', SESSION_SECRET)
+      .createHmac('sha256', secret)
       .update(data)
       .digest('base64url');
 
