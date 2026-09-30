@@ -25,6 +25,8 @@ import {
   Terminal,
 } from 'lucide-react';
 
+import { parseBeatMp3Price } from '@/lib/utils';
+
 export interface LicenseTier {
   id: string;
   code: string;
@@ -42,81 +44,86 @@ export interface LicenseTier {
 export const UPI_ID = '8319145425-2@ybl';
 export const UPI_NAME = 'AMITDIED';
 
-export const LICENSE_TIERS: LicenseTier[] = [
-  {
-    id: 'mp3',
-    code: '01',
-    name: 'MP3 LEASE',
-    shortName: 'MP3 LEASE',
-    priceINR: 799,
-    formattedPrice: '₹799',
-    tagline: 'MP3 MASTER // COMMERCIAL USE',
-    features: ['MP3 Master', 'Commercial use', 'Non-exclusive'],
-    rights: [
-      'Untagged 320kbps MP3 Master file',
-      'Commercial streaming & YouTube monetization',
-      'Distribution on Spotify, Apple Music & all platforms',
-      'Instant untagged delivery after payment confirmation',
-    ],
-  },
-  {
-    id: 'wav',
-    code: '02',
-    name: 'WAV LEASE',
-    shortName: 'WAV LEASE',
-    priceINR: 999,
-    formattedPrice: '₹999',
-    badge: 'MOST USED',
-    badgeType: 'popular',
-    tagline: 'WAV MASTER + MP3 // COMMERCIAL USE',
-    features: ['WAV Master', 'MP3 included', 'Commercial use', 'Non-exclusive'],
-    rights: [
-      'Lossless 24-Bit Master WAV + Untagged MP3 included',
-      'Commercial streaming, radio airplay & music videos',
-      'Industry standard quality for recording artists',
-      'Instant untagged master delivery after payment confirmation',
-    ],
-  },
-  {
-    id: 'stems',
-    code: '03',
-    name: 'TRACKOUT STEMS',
-    shortName: 'TRACKOUT STEMS',
-    priceINR: 2999,
-    formattedPrice: '₹2,999',
-    tagline: 'INDIVIDUAL WAV STEMS // WAV + MP3',
-    features: ['Individual WAV stems', 'WAV + MP3', 'Commercial use', 'Non-exclusive'],
-    rights: [
-      'Full separated multitrack stems (drums, bass, melodies, FX in 24-Bit WAV)',
-      'Master 24-Bit WAV + 320kbps MP3 included',
-      'Complete mixing, vocal arrangement & sound design freedom',
-      'Instant trackout archive delivery after payment confirmation',
-    ],
-  },
-  {
-    id: 'exclusive',
-    code: '04',
-    name: 'EXCLUSIVE',
-    shortName: 'EXCLUSIVE',
-    priceINR: 5999,
-    formattedPrice: '₹5,999',
-    badge: 'OWN IT',
-    badgeType: 'exclusive',
-    tagline: 'FULL RIGHTS // ALL STEMS // BEAT REMOVED FROM STORE',
-    features: [
-      'Full exclusive rights',
-      'All stems included',
-      'Beat removed from public store',
-      'Exclusive ownership/license',
-    ],
-    rights: [
-      'Full exclusive ownership & master rights transfer',
-      'Beat permanently removed from the public store catalog',
-      'All individual multitrack stems + master WAV + MP3',
-      'Unlimited distribution, sync licensing, broadcasting & live performance',
-    ],
-  },
-];
+export function getLicenseTiers(beatPrice?: number | string | null): LicenseTier[] {
+  const mp3Price = parseBeatMp3Price(beatPrice);
+  return [
+    {
+      id: 'mp3',
+      code: '01',
+      name: 'MP3 LEASE',
+      shortName: 'MP3 LEASE',
+      priceINR: mp3Price,
+      formattedPrice: `₹${mp3Price.toLocaleString('en-IN')}`,
+      tagline: 'MP3 MASTER // COMMERCIAL USE',
+      features: ['MP3 Master', 'Commercial use', 'Non-exclusive'],
+      rights: [
+        'Untagged 320kbps MP3 Master file',
+        'Commercial streaming & YouTube monetization',
+        'Distribution on Spotify, Apple Music & all platforms',
+        'Instant untagged delivery after payment confirmation',
+      ],
+    },
+    {
+      id: 'wav',
+      code: '02',
+      name: 'WAV LEASE',
+      shortName: 'WAV LEASE',
+      priceINR: 999,
+      formattedPrice: '₹999',
+      badge: 'MOST USED',
+      badgeType: 'popular',
+      tagline: 'WAV MASTER + MP3 // COMMERCIAL USE',
+      features: ['WAV Master', 'MP3 included', 'Commercial use', 'Non-exclusive'],
+      rights: [
+        'Lossless 24-Bit Master WAV + Untagged MP3 included',
+        'Commercial streaming, radio airplay & music videos',
+        'Industry standard quality for recording artists',
+        'Instant untagged master delivery after payment confirmation',
+      ],
+    },
+    {
+      id: 'stems',
+      code: '03',
+      name: 'TRACKOUT STEMS',
+      shortName: 'TRACKOUT STEMS',
+      priceINR: 2999,
+      formattedPrice: '₹2,999',
+      tagline: 'INDIVIDUAL WAV STEMS // WAV + MP3',
+      features: ['Individual WAV stems', 'WAV + MP3', 'Commercial use', 'Non-exclusive'],
+      rights: [
+        'Full separated multitrack stems (drums, bass, melodies, FX in 24-Bit WAV)',
+        'Master 24-Bit WAV + 320kbps MP3 included',
+        'Complete mixing, vocal arrangement & sound design freedom',
+        'Instant trackout archive delivery after payment confirmation',
+      ],
+    },
+    {
+      id: 'exclusive',
+      code: '04',
+      name: 'EXCLUSIVE',
+      shortName: 'EXCLUSIVE',
+      priceINR: 5999,
+      formattedPrice: '₹5,999',
+      badge: 'OWN IT',
+      badgeType: 'exclusive',
+      tagline: 'FULL RIGHTS // ALL STEMS // BEAT REMOVED FROM STORE',
+      features: [
+        'Full exclusive rights',
+        'All stems included',
+        'Beat removed from public store',
+        'Exclusive ownership/license',
+      ],
+      rights: [
+        'Full exclusive ownership & master rights transfer',
+        'Beat permanently removed from the public store catalog',
+        'All individual multitrack stems + master WAV + MP3',
+        'Unlimited distribution, sync licensing, broadcasting & live performance',
+      ],
+    },
+  ];
+}
+
+export const LICENSE_TIERS: LicenseTier[] = getLicenseTiers(799);
 
 interface LicenseModalProps {
   beat: {
@@ -176,8 +183,9 @@ export function LicenseModal({ beat, isOpen, onClose }: LicenseModalProps) {
 
   if (!isOpen || !beat) return null;
 
+  const tiers = getLicenseTiers(beat.price);
   const selectedTier =
-    LICENSE_TIERS.find((t) => t.id === selectedTierId) || LICENSE_TIERS[1];
+    tiers.find((t) => t.id === selectedTierId) || tiers[1];
 
   // UPI deep-link standard URI (100% INR)
   const upiTransactionNote = `Beat ${beat.title} - ${selectedTier.name}`;
@@ -390,7 +398,7 @@ export function LicenseModal({ beat, isOpen, onClose }: LicenseModalProps) {
 
                   {/* 4 License Cards Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {LICENSE_TIERS.map((tier) => {
+                    {tiers.map((tier) => {
                       const isSelected = selectedTierId === tier.id;
                       return (
                         <button

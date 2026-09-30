@@ -43,6 +43,7 @@ import {
   getGoogleStatus,
 } from "./data-actions";
 import { uploadToSupabaseStorage, sanitizeStorageFilename } from "@/lib/supabase";
+import { formatINR, parseBeatMp3Price, KEY_GROUPS } from "@/lib/utils";
 
 type Tab = "songs" | "videos" | "cctv";
 
@@ -395,15 +396,20 @@ function BeatsManager() {
     title: "",
     producer: "AMITDIED",
     bpm: 120,
-    key: "",
+    key: "C Minor",
     genre: "Trap",
     moodTags: "",
-    price: 29.99,
+    price: 799,
     coverUrl: "",
     audioUrl: "",
     buyLink: "",
     description: "",
   });
+
+  const [isCustomPrice, setIsCustomPrice] = useState(false);
+  const [customPriceValue, setCustomPriceValue] = useState("");
+  const [isEditCustomPrice, setIsEditCustomPrice] = useState(false);
+  const [editCustomPriceValue, setEditCustomPriceValue] = useState("");
 
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -554,15 +560,17 @@ function BeatsManager() {
         title: "",
         producer: "AMITDIED",
         bpm: 120,
-        key: "",
+        key: "C Minor",
         genre: "Trap",
         moodTags: "",
-        price: 29.99,
+        price: 799,
         coverUrl: "",
         audioUrl: "",
         buyLink: "",
         description: "",
       });
+      setIsCustomPrice(false);
+      setCustomPriceValue("");
       setCoverFile(null);
       setAudioFile(null);
       setAudioUploadProgress(0);
@@ -589,10 +597,16 @@ function BeatsManager() {
   };
 
   const startEdit = (beat: any) => {
+    const rawPrice = parseBeatMp3Price(beat.price);
+    const isPreset = [799, 999, 2999, 5999].includes(rawPrice);
     setEditingBeat({
       ...beat,
+      price: rawPrice,
+      key: beat.key || "C Minor",
       moodTags: Array.isArray(beat.moodTags) ? beat.moodTags.join(", ") : beat.moodTags || "",
     });
+    setIsEditCustomPrice(!isPreset);
+    setEditCustomPriceValue(!isPreset ? String(rawPrice) : "");
     setEditCoverFile(null);
     setEditAudioFile(null);
     setIsAdding(false);
@@ -752,7 +766,7 @@ function BeatsManager() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
             <div>
               <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">BPM</label>
               <input
@@ -762,32 +776,91 @@ function BeatsManager() {
                 onChange={(e) =>
                   setEditingBeat({ ...editingBeat, bpm: Number(e.target.value) })
                 }
-                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none font-mono"
               />
             </div>
             <div>
               <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Key</label>
-              <input
-                type="text"
-                value={editingBeat.key || ""}
+              <select
+                value={editingBeat.key || "No Key"}
                 onChange={(e) =>
                   setEditingBeat({ ...editingBeat, key: e.target.value })
                 }
-                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
-              />
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2.5 text-white focus:border-red-600 outline-none font-mono text-xs cursor-pointer"
+              >
+                <option value="No Key">No Key / N/A</option>
+                <optgroup label="MAJOR">
+                  {KEY_GROUPS[0].keys.map((k) => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="MINOR">
+                  {KEY_GROUPS[1].keys.map((k) => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
+                </optgroup>
+              </select>
             </div>
             <div>
-              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Price ($)</label>
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={editingBeat.price}
-                onChange={(e) =>
-                  setEditingBeat({ ...editingBeat, price: Number(e.target.value) })
-                }
-                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
-              />
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
+                MP3 / BASE PRICE (₹)
+              </label>
+              <select
+                value={isEditCustomPrice ? "custom" : String(editingBeat.price)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "custom") {
+                    setIsEditCustomPrice(true);
+                    const parsed = parseInt(editCustomPriceValue, 10) || 799;
+                    setEditingBeat({ ...editingBeat, price: parsed });
+                  } else {
+                    setIsEditCustomPrice(false);
+                    const num = Number(val);
+                    setEditingBeat({ ...editingBeat, price: num });
+                  }
+                }}
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2.5 text-white focus:border-red-600 outline-none font-mono text-xs cursor-pointer"
+              >
+                <option value="799">₹799</option>
+                <option value="999">₹999</option>
+                <option value="2999">₹2,999</option>
+                <option value="5999">₹5,999</option>
+                <option value="custom">Custom</option>
+              </select>
+
+              {isEditCustomPrice && (
+                <div className="mt-2">
+                  <label className="block text-zinc-500 mb-1 text-[10px] uppercase tracking-wider font-mono">
+                    CUSTOM PRICE (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">₹</span>
+                    <input
+                      required
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="e.g. 1499"
+                      value={editCustomPriceValue}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, "");
+                        setEditCustomPriceValue(raw);
+                        const parsed = parseInt(raw, 10);
+                        if (!isNaN(parsed) && parsed > 0 && isFinite(parsed)) {
+                          setEditingBeat({ ...editingBeat, price: parsed });
+                        }
+                      }}
+                      className="w-full bg-black border border-zinc-800 rounded-lg pl-7 pr-3 py-2 text-white focus:border-red-600 outline-none font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {Number(editingBeat.price) > 999 && (
+                <p className="mt-1.5 text-[10px] text-amber-400 font-mono leading-tight">
+                  NOTE: MP3 price is higher than the standard WAV license price.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Genre</label>
@@ -912,7 +985,7 @@ function BeatsManager() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <h4 className="font-bold text-white truncate">{beat.title}</h4>
                   <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono font-semibold">
-                    ${Number(beat.price).toFixed(2)}
+                    {formatINR(beat.price)}
                   </span>
                   <span className="text-xs bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded">
                     {beat.genre || "Trap"}
@@ -1022,7 +1095,7 @@ function BeatsManager() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
             <div>
               <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">BPM</label>
               <input
@@ -1033,34 +1106,91 @@ function BeatsManager() {
                 onChange={(e) =>
                   setNewBeat({ ...newBeat, bpm: Number(e.target.value) })
                 }
-                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
+                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none font-mono"
               />
             </div>
             <div>
               <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Key</label>
-              <input
-                type="text"
-                placeholder="e.g. C Min"
-                value={newBeat.key}
+              <select
+                value={newBeat.key || "C Minor"}
                 onChange={(e) =>
                   setNewBeat({ ...newBeat, key: e.target.value })
                 }
-                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
-              />
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2.5 text-white focus:border-red-600 outline-none font-mono text-xs cursor-pointer"
+              >
+                <option value="No Key">No Key / N/A</option>
+                <optgroup label="MAJOR">
+                  {KEY_GROUPS[0].keys.map((k) => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="MINOR">
+                  {KEY_GROUPS[1].keys.map((k) => (
+                    <option key={k} value={k}>{k}</option>
+                  ))}
+                </optgroup>
+              </select>
             </div>
             <div>
-              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Price ($)</label>
-              <input
-                required
-                type="number"
-                step="0.01"
-                placeholder="29.99"
-                value={newBeat.price}
-                onChange={(e) =>
-                  setNewBeat({ ...newBeat, price: Number(e.target.value) })
-                }
-                className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
-              />
+              <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
+                MP3 / BASE PRICE (₹)
+              </label>
+              <select
+                value={isCustomPrice ? "custom" : String(newBeat.price)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "custom") {
+                    setIsCustomPrice(true);
+                    const parsed = parseInt(customPriceValue, 10) || 799;
+                    setNewBeat({ ...newBeat, price: parsed });
+                  } else {
+                    setIsCustomPrice(false);
+                    const num = Number(val);
+                    setNewBeat({ ...newBeat, price: num });
+                  }
+                }}
+                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2.5 text-white focus:border-red-600 outline-none font-mono text-xs cursor-pointer"
+              >
+                <option value="799">₹799</option>
+                <option value="999">₹999</option>
+                <option value="2999">₹2,999</option>
+                <option value="5999">₹5,999</option>
+                <option value="custom">Custom</option>
+              </select>
+
+              {isCustomPrice && (
+                <div className="mt-2">
+                  <label className="block text-zinc-500 mb-1 text-[10px] uppercase tracking-wider font-mono">
+                    CUSTOM PRICE (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">₹</span>
+                    <input
+                      required
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="e.g. 1499"
+                      value={customPriceValue}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, "");
+                        setCustomPriceValue(raw);
+                        const parsed = parseInt(raw, 10);
+                        if (!isNaN(parsed) && parsed > 0 && isFinite(parsed)) {
+                          setNewBeat({ ...newBeat, price: parsed });
+                        }
+                      }}
+                      className="w-full bg-black border border-zinc-800 rounded-lg pl-7 pr-3 py-2 text-white focus:border-red-600 outline-none font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {Number(newBeat.price) > 999 && (
+                <p className="mt-1.5 text-[10px] text-amber-400 font-mono leading-tight">
+                  NOTE: MP3 price is higher than the standard WAV license price.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">Genre</label>

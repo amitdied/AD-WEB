@@ -4,6 +4,7 @@ import { useAudio } from '@/lib/AudioContext';
 import { Play, Pause, SkipForward, SkipBack, Heart, Volume2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Image from 'next/image';
+import { formatINR } from '@/lib/utils';
 
 export function StickyPlayer() {
   const { currentTrack, isPlaying, progress, togglePlay, seek } = useAudio();
@@ -120,7 +121,7 @@ export function StickyPlayer() {
              className="bg-red-700 hover:bg-red-600 text-white text-xs font-mono font-bold px-3 py-1.5 rounded-sm transition-all hover:shadow-[0_0_15px_rgba(220,38,38,0.5)] uppercase tracking-wider hidden sm:flex items-center gap-1.5 cursor-pointer"
              title="Acquire Beat / Instant Instagram DM"
            >
-              <span>Acquire ${currentTrack.price}</span>
+              <span>Acquire {formatINR(currentTrack.price)}</span>
            </button>
         </div>
       </div>

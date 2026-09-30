@@ -13,6 +13,7 @@ import Image from "next/image";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { LicenseModal } from "./LicenseModal";
+import { formatINR } from "@/lib/utils";
 
 export function BeatStore() {
   const { currentTrack, isPlaying, playTrack } = useAudio();
@@ -332,7 +333,7 @@ export function BeatStore() {
                       License
                     </span>
                     <div className="font-mono text-base font-bold text-zinc-200">
-                      ${beat.price}
+                      {formatINR(beat.price)}
                     </div>
                   </div>
                   <button
