@@ -36,29 +36,67 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    // Client-side initialization of audio element
-    audioRef.current = new Audio();
+    // 1. Single source of truth HTMLAudioElement
+    const audio = new Audio();
+    audioRef.current = audio;
 
-    const audio = audioRef.current;
+    let isMounted = true;
 
-    const updateProgress = () => {
-      if (audio.duration) {
-        setProgress((audio.currentTime / audio.duration) * 100);
+    const handleTimeUpdate = () => {
+      if (!isMounted || !audioRef.current) return;
+      const currTime = audio.currentTime;
+      const dur = audio.duration;
+      if (Number.isNaN(currTime) || Number.isNaN(dur) || dur <= 0 || !Number.isFinite(dur)) {
+        return;
       }
+      const calcProgress = (currTime / dur) * 100;
+      setProgress(Math.max(0, Math.min(100, calcProgress)));
+    };
+
+    const handleLoadedMetadata = () => {
+      if (!isMounted || !audioRef.current) return;
+      handleTimeUpdate();
+    };
+
+    const handleDurationChange = () => {
+      if (!isMounted || !audioRef.current) return;
+      handleTimeUpdate();
     };
 
     const handleEnded = () => {
+      if (!isMounted) return;
       setIsPlaying(false);
       setProgress(100);
     };
 
-    audio.addEventListener("timeupdate", updateProgress);
+    const handlePlay = () => {
+      if (!isMounted) return;
+      setIsPlaying(true);
+    };
+
+    const handlePause = () => {
+      if (!isMounted) return;
+      setIsPlaying(false);
+    };
+
+    // 2. Listen to timeupdate, loadedmetadata, durationchange, ended, play, pause
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("durationchange", handleDurationChange);
     audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
 
     return () => {
-      audio.removeEventListener("timeupdate", updateProgress);
+      isMounted = false;
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("durationchange", handleDurationChange);
       audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
       audio.pause();
+      audioRef.current = null;
     };
   }, []);
 
@@ -74,7 +112,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         });
       }
     } else {
-      audio.pause();
+      if (!audio.paused) {
+        audio.pause();
+      }
     }
   }, [isPlaying, currentTrack]);
 
@@ -87,8 +127,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // 11. When a new beat is selected, reset progress state correctly
     setCurrentTrack(track);
     setProgress(0);
+    audio.currentTime = 0;
 
     if (track.audioUrl) {
       audio.src = track.audioUrl;
@@ -99,7 +141,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         setIsPlaying(false);
       });
     } else {
-      // Mock progress fallback if no audio URL is provided
       audio.removeAttribute("src");
       setIsPlaying(true);
     }
@@ -115,9 +156,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             setIsPlaying(false);
             return 100;
           }
-          return prev + 0.1;
+          return prev + 1;
         });
-      }, 100);
+      }, 1000);
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -134,10 +175,11 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const audio = audioRef.current;
     if (!audio) return;
 
-    setProgress(newProgress);
+    const clampedProgress = Math.max(0, Math.min(100, newProgress));
+    setProgress(clampedProgress);
 
-    if (currentTrack?.audioUrl && audio.duration) {
-      audio.currentTime = (newProgress / 100) * audio.duration;
+    if (currentTrack?.audioUrl && audio.duration && Number.isFinite(audio.duration) && audio.duration > 0) {
+      audio.currentTime = (clampedProgress / 100) * audio.duration;
     }
   };
 
