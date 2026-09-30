@@ -31,16 +31,6 @@ export async function POST(req: Request) {
     }
 
     const cleanHash = adminHashEnv.trim();
-
-    console.log('[LOGIN DIAGNOSTIC]', {
-      hashExists: Boolean(adminHashEnv),
-      hashLengthRaw: adminHashEnv ? adminHashEnv.length : 0,
-      hashLengthTrimmed: cleanHash ? cleanHash.length : 0,
-      hashPrefix: cleanHash ? cleanHash.substring(0, 7) : 'none',
-      startsWithDollarTwo: cleanHash ? cleanHash.startsWith('$2') : false,
-      receivedPasswordLength: password ? password.length : 0,
-    });
-
     let isValid = false;
 
     if (cleanHash.startsWith('$2')) {
@@ -50,15 +40,15 @@ export async function POST(req: Request) {
       isValid = password === cleanHash;
     }
 
-    console.log('[LOGIN DIAGNOSTIC] bcrypt.compare result:', isValid);
-
     if (!isValid) {
       return NextResponse.json({ success: false, error: 'Invalid admin password' }, { status: 401 });
     }
 
     const sessionPayload = {
+      authenticated: true,
       email: 'admin@amitdied.com',
       name: 'AMITDIED',
+      iat: Date.now(),
       exp: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
     };
 
