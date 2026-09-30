@@ -3,6 +3,7 @@ import { motion, useScroll, useTransform } from 'motion/react';
 import { Button } from './ui/button';
 import { ArrowRight, Play, ChevronDown } from 'lucide-react';
 import { useRef } from 'react';
+import Link from 'next/link';
 
 export function Hero() {
   const ref = useRef(null);
@@ -97,6 +98,14 @@ export function Hero() {
                 <Play className="w-4 h-4 fill-white" />
                 Latest Release
              </button>
+
+             <Link 
+                href="/smoke-session"
+                className="group relative overflow-hidden bg-transparent border border-zinc-700 text-white px-8 py-4 uppercase font-bold text-sm tracking-[0.2em] w-full sm:w-auto inline-flex justify-center items-center gap-3 hover:border-red-600 transition-colors"
+             >
+                <div className="absolute inset-0 bg-red-600/10 -z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                Smoke Session
+             </Link>
            </div>
         </motion.div>
       </div>

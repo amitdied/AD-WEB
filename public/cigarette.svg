@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 60" width="300" height="60">
+  <rect x="10" y="15" width="30" height="30" fill="#9ca3af" rx="2" class="cigarette-tip"/>
+  <rect x="40" y="15" width="180" height="30" fill="#ffffff" rx="2"/>
+  <rect x="220" y="15" width="70" height="30" fill="#f59e0b" rx="2"/>
+</svg>
