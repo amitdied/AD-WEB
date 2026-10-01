@@ -24,6 +24,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   doc,
   where,
   serverTimestamp,
@@ -596,48 +597,207 @@ export async function deleteBeat(id: string): Promise<ActionResponse> {
 }
 
 // ==========================================
-// PORTFOLIO / VIDEOS MANAGEMENT
+// PORTFOLIO / VIDEOS MANAGEMENT (FIRESTORE + GOOGLE SHEET)
 // ==========================================
 
-export async function getCustomVideos() {
-  const db = readDb();
-
-  try {
-    const tokens = getStoredTokens();
-    if (tokens?.access_token) {
-      const sheetVideos = await readPortfolioFromSheet();
-      if (Array.isArray(sheetVideos) && sheetVideos.length > 0) {
-        db.videos = sheetVideos;
-        writeDb(db);
-        return sheetVideos;
-      }
-    }
-  } catch (e) {
-    console.warn("Could not read videos from Google Sheet, using local DB:", e);
-  }
-
-  return db.videos || [];
+function extractYouTubeId(url: string): string | null {
+  if (!url || typeof url !== "string") return null;
+  const clean = url.trim();
+  const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+  if (match && match[1]) return match[1];
+  if (/^[\w-]{11}$/.test(clean)) return clean;
+  return null;
 }
 
-export async function addVideo(videoData: any): Promise<ActionResponse> {
+export interface PortfolioVideoItem {
+  id: string;
+  type: "youtube";
+  youtubeId: string;
+  youtubeUrl: string;
+  url: string; // for backward compatibility
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  visible: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function getCustomVideos(includeHidden = true): Promise<PortfolioVideoItem[]> {
+  const localDb = readDb();
+  let firestoreVideos: PortfolioVideoItem[] = [];
+  let firestoreAvailable = false;
+
+  try {
+    const portfolioCol = collection(db, "portfolio");
+    const snap = await getDocs(portfolioCol);
+    if (!snap.empty) {
+      firestoreAvailable = true;
+      firestoreVideos = snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const yId = data.youtubeId || docSnap.id;
+        return {
+          id: docSnap.id,
+          type: "youtube" as const,
+          youtubeId: yId,
+          youtubeUrl: data.youtubeUrl || data.url || `https://www.youtube.com/watch?v=${yId}`,
+          url: data.url || data.youtubeUrl || `https://www.youtube.com/watch?v=${yId}`,
+          title: data.title || "Archive Video",
+          description: data.description || "",
+          thumbnail: data.thumbnail || `https://img.youtube.com/vi/${yId}/hqdefault.jpg`,
+          visible: data.visible !== false,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString(),
+        };
+      });
+    }
+  } catch (err) {
+    console.warn("Could not query Firestore portfolio collection, falling back to local store:", err);
+  }
+
+  // Idempotent migration / seed of YOUTUBE_LINKS
+  const deletedIds = localDb.deletedIds || [];
+  const existingIdSet = new Set<string>();
+
+  if (firestoreVideos.length > 0) {
+    firestoreVideos.forEach((v) => existingIdSet.add(v.youtubeId));
+  } else if (Array.isArray(localDb.videos) && localDb.videos.length > 0) {
+    localDb.videos.forEach((v: any) => {
+      const yId = v.youtubeId || extractYouTubeId(v.url || v.id) || v.id;
+      existingIdSet.add(yId);
+    });
+  }
+
+  const itemsToSeed: PortfolioVideoItem[] = [];
+  for (const url of YOUTUBE_LINKS) {
+    const yId = extractYouTubeId(url);
+    if (yId && !existingIdSet.has(yId) && !deletedIds.includes(yId)) {
+      itemsToSeed.push({
+        id: yId,
+        type: "youtube",
+        youtubeId: yId,
+        youtubeUrl: url,
+        url: url,
+        title: "Archive Video",
+        thumbnail: `https://img.youtube.com/vi/${yId}/hqdefault.jpg`,
+        visible: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      existingIdSet.add(yId);
+    }
+  }
+
+  // Persist seeded items to Firestore and localDb
+  if (itemsToSeed.length > 0) {
+    for (const item of itemsToSeed) {
+      try {
+        await setDoc(doc(db, "portfolio", item.id), item);
+      } catch (e) {
+        console.warn("Could not seed item to Firestore:", item.id, e);
+      }
+      firestoreVideos.push(item);
+    }
+
+    if (!Array.isArray(localDb.videos)) localDb.videos = [];
+    itemsToSeed.forEach((s) => {
+      if (!localDb.videos.find((v: any) => v.id === s.id || v.youtubeId === s.youtubeId)) {
+        localDb.videos.push(s);
+      }
+    });
+    writeDb(localDb);
+  }
+
+  let finalVideos = firestoreVideos.length > 0 ? firestoreVideos : (localDb.videos || []);
+
+  // Standardize format
+  finalVideos = finalVideos.map((v: any) => {
+    const yId = v.youtubeId || extractYouTubeId(v.url || v.youtubeUrl || v.id) || v.id;
+    return {
+      id: v.id || yId,
+      type: "youtube" as const,
+      youtubeId: yId,
+      youtubeUrl: v.youtubeUrl || v.url || `https://www.youtube.com/watch?v=${yId}`,
+      url: v.url || v.youtubeUrl || `https://www.youtube.com/watch?v=${yId}`,
+      title: v.title || "Archive Video",
+      description: v.description || "",
+      thumbnail: v.thumbnail || `https://img.youtube.com/vi/${yId}/hqdefault.jpg`,
+      visible: v.visible !== false,
+      createdAt: v.createdAt || new Date().toISOString(),
+      updatedAt: v.updatedAt || new Date().toISOString(),
+    };
+  });
+
+  if (!includeHidden) {
+    return finalVideos.filter((v: PortfolioVideoItem) => v.visible);
+  }
+
+  return finalVideos;
+}
+
+export async function addVideo(videoData: { url: string; title?: string; description?: string }): Promise<ActionResponse> {
   try {
     const session = await getAdminSession();
     if (!session || !session.isAuthenticated) {
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const db = readDb();
-    const newVideo = {
-      id: "custom-video-" + Date.now().toString(),
-      title: String(videoData.title || ""),
-      url: String(videoData.url || ""),
-      description: String(videoData.description || ""),
-    };
-    db.videos.push(newVideo);
-    writeDb(db);
+    const rawUrl = videoData.url?.trim();
+    const ytId = extractYouTubeId(rawUrl);
+    if (!ytId) {
+      return {
+        ok: false,
+        error: "INVALID_URL: Please enter a valid YouTube URL (e.g. youtube.com/watch?v=..., youtu.be/..., or youtube.com/shorts/...)",
+      };
+    }
 
-    // Sync to Google Sheet PORTFOLIO tab
-    await writeAllPortfolioToSheet(db.videos);
+    const existingVideos = await getCustomVideos(true);
+    const isDuplicate = existingVideos.some((v) => v.youtubeId === ytId || v.id === ytId);
+    if (isDuplicate) {
+      return {
+        ok: false,
+        error: "DUPLICATE_VIDEO: This YouTube video is already in your portfolio.",
+      };
+    }
+
+    const standardUrl = `https://www.youtube.com/watch?v=${ytId}`;
+    const newVideo: PortfolioVideoItem = {
+      id: ytId,
+      type: "youtube",
+      youtubeId: ytId,
+      youtubeUrl: standardUrl,
+      url: standardUrl,
+      title: videoData.title?.trim() || "Archive Video",
+      description: videoData.description?.trim() || "",
+      thumbnail: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+      visible: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save to Firestore
+    try {
+      await setDoc(doc(db, "portfolio", ytId), newVideo);
+    } catch (fsErr) {
+      console.warn("Could not save video to Firestore, continuing with local DB:", fsErr);
+    }
+
+    // Save to local DB
+    const localDb = readDb();
+    if (!Array.isArray(localDb.videos)) localDb.videos = [];
+    localDb.videos = localDb.videos.filter((v: any) => v.id !== ytId && v.youtubeId !== ytId);
+    localDb.videos.unshift(newVideo);
+    if (Array.isArray(localDb.deletedIds)) {
+      localDb.deletedIds = localDb.deletedIds.filter((d: string) => d !== ytId);
+    }
+    writeDb(localDb);
+
+    // Sync to Google Sheet PORTFOLIO tab if connected
+    try {
+      await writeAllPortfolioToSheet(localDb.videos);
+    } catch (sheetErr) {
+      console.warn("Google Sheet sync error on addVideo:", sheetErr);
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");
@@ -649,32 +809,85 @@ export async function addVideo(videoData: any): Promise<ActionResponse> {
   }
 }
 
-export async function updateVideo(id: string, updatedData: any): Promise<ActionResponse> {
+export async function updateVideo(
+  id: string,
+  updatedData: { url?: string; title?: string; description?: string; visible?: boolean }
+): Promise<ActionResponse> {
   try {
     const session = await getAdminSession();
     if (!session || !session.isAuthenticated) {
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const db = readDb();
-    const index = (db.videos || []).findIndex((v: any) => v.id === id);
-    if (index === -1) {
+    const allVideos = await getCustomVideos(true);
+    const existing = allVideos.find((v) => v.id === id || v.youtubeId === id);
+    if (!existing) {
       return { ok: false, error: "VIDEO_NOT_FOUND: Video ID not found" };
     }
 
-    const currentVideo = db.videos[index];
-    const updatedVideo = {
-      ...currentVideo,
-      title: updatedData.title !== undefined ? String(updatedData.title) : currentVideo.title,
-      url: updatedData.url !== undefined ? String(updatedData.url) : currentVideo.url,
-      description: updatedData.description !== undefined ? String(updatedData.description) : currentVideo.description,
+    let targetYtId = existing.youtubeId;
+    let targetUrl = existing.youtubeUrl;
+
+    if (updatedData.url && updatedData.url.trim() !== "") {
+      const parsedId = extractYouTubeId(updatedData.url);
+      if (!parsedId) {
+        return {
+          ok: false,
+          error: "INVALID_URL: Please enter a valid YouTube URL (e.g. youtube.com/watch?v=..., youtu.be/..., or youtube.com/shorts/...)",
+        };
+      }
+      // Check if duplicate of another existing video
+      const isDuplicate = allVideos.some((v) => (v.youtubeId === parsedId || v.id === parsedId) && v.id !== id);
+      if (isDuplicate) {
+        return {
+          ok: false,
+          error: "DUPLICATE_VIDEO: Another portfolio item is already using this YouTube video URL.",
+        };
+      }
+      targetYtId = parsedId;
+      targetUrl = `https://www.youtube.com/watch?v=${parsedId}`;
+    }
+
+    const updatedVideo: PortfolioVideoItem = {
+      id: targetYtId,
+      type: "youtube",
+      youtubeId: targetYtId,
+      youtubeUrl: targetUrl,
+      url: targetUrl,
+      title: updatedData.title !== undefined ? updatedData.title.trim() : existing.title,
+      description: updatedData.description !== undefined ? updatedData.description.trim() : (existing.description || ""),
+      thumbnail: `https://img.youtube.com/vi/${targetYtId}/hqdefault.jpg`,
+      visible: updatedData.visible !== undefined ? updatedData.visible : existing.visible,
+      createdAt: existing.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    db.videos[index] = updatedVideo;
-    writeDb(db);
+    // Update in Firestore
+    try {
+      if (id !== targetYtId) {
+        await deleteDoc(doc(db, "portfolio", id));
+      }
+      await setDoc(doc(db, "portfolio", targetYtId), updatedVideo);
+    } catch (fsErr) {
+      console.warn("Could not update video in Firestore, continuing with local DB:", fsErr);
+    }
 
-    // Sync to Google Sheet PORTFOLIO tab
-    await writeAllPortfolioToSheet(db.videos);
+    // Update in local DB
+    const localDb = readDb();
+    if (!Array.isArray(localDb.videos)) localDb.videos = [];
+    const idx = localDb.videos.findIndex((v: any) => v.id === id || v.youtubeId === id);
+    if (idx !== -1) {
+      localDb.videos[idx] = updatedVideo;
+    } else {
+      localDb.videos.push(updatedVideo);
+    }
+    writeDb(localDb);
+
+    try {
+      await writeAllPortfolioToSheet(localDb.videos);
+    } catch (sheetErr) {
+      console.warn("Google Sheet sync error on updateVideo:", sheetErr);
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");
@@ -686,6 +899,10 @@ export async function updateVideo(id: string, updatedData: any): Promise<ActionR
   }
 }
 
+export async function toggleVideoVisibility(id: string, visible: boolean): Promise<ActionResponse> {
+  return updateVideo(id, { visible });
+}
+
 export async function deleteVideo(id: string): Promise<ActionResponse> {
   try {
     const session = await getAdminSession();
@@ -693,14 +910,25 @@ export async function deleteVideo(id: string): Promise<ActionResponse> {
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const db = readDb();
-    db.videos = db.videos.filter((v: any) => v.id !== id);
-    if (!db.deletedIds) db.deletedIds = [];
-    if (!db.deletedIds.includes(id)) db.deletedIds.push(id);
-    writeDb(db);
+    // Delete from Firestore
+    try {
+      await deleteDoc(doc(db, "portfolio", id));
+    } catch (fsErr) {
+      console.warn("Could not delete video from Firestore:", fsErr);
+    }
 
-    // Sync to Google Sheet PORTFOLIO tab
-    await writeAllPortfolioToSheet(db.videos);
+    // Delete from local DB
+    const localDb = readDb();
+    localDb.videos = (localDb.videos || []).filter((v: any) => v.id !== id && v.youtubeId !== id);
+    if (!localDb.deletedIds) localDb.deletedIds = [];
+    if (!localDb.deletedIds.includes(id)) localDb.deletedIds.push(id);
+    writeDb(localDb);
+
+    try {
+      await writeAllPortfolioToSheet(localDb.videos);
+    } catch (sheetErr) {
+      console.warn("Google Sheet sync error on deleteVideo:", sheetErr);
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");

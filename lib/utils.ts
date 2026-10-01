@@ -37,6 +37,15 @@ export const PRESET_PRICES = [
   { label: "₹5,999", value: 5999 },
 ] as const;
 
+export function extractYouTubeId(url: string): string | null {
+  if (!url || typeof url !== "string") return null;
+  const clean = url.trim();
+  const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+  if (match && match[1]) return match[1];
+  if (/^[\w-]{11}$/.test(clean)) return clean;
+  return null;
+}
+
 export const KEY_GROUPS = [
   {
     group: "MAJOR",

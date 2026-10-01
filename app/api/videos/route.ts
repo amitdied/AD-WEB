@@ -1,29 +1,23 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import { YOUTUBE_LINKS } from '@/lib/data';
+import { getCustomVideos } from '@/app/admin/data-actions';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const dbPath = path.join(process.cwd(), 'data', 'db.json');
-    if (fs.existsSync(dbPath)) {
-      const content = fs.readFileSync(dbPath, 'utf8');
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed?.videos) && parsed.videos.length > 0) {
-        return NextResponse.json(parsed.videos, {
-          headers: {
-            'Cache-Control': 'no-store, max-age=0',
-          },
-        });
-      }
+    const videos = await getCustomVideos(false); // Only visible videos
+    if (Array.isArray(videos) && videos.length > 0) {
+      return NextResponse.json(videos, {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      });
     }
   } catch (error) {
-    console.error('Error reading videos DB:', error);
+    console.error('Error fetching public portfolio videos:', error);
   }
 
-  return NextResponse.json(YOUTUBE_LINKS, {
+  return NextResponse.json([], {
     headers: {
       'Cache-Control': 'no-store, max-age=0',
     },
