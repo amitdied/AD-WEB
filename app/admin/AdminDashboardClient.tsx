@@ -1394,177 +1394,83 @@ function BeatsManager() {
 }
 
 // ==========================================
-// PORTFOLIO VIDEOS MANAGER
+// PORTFOLIO VIDEOS MANAGER (READ-ONLY AUDIT & PREVIEW)
 // ==========================================
 
 function VideosManager() {
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Add state
-  const [isAdding, setIsAdding] = useState(false);
-  const [isSubmittingNew, setIsSubmittingNew] = useState(false);
-  const [newVideo, setNewVideo] = useState({
-    title: "",
-    url: "",
-    description: "",
-  });
-
-  // Edit state
-  const [editingVideo, setEditingVideo] = useState<any | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  // Helper to extract YouTube video ID directly using regex for standard watch, youtu.be, and shorts
-  const extractYoutubeId = (url: string) => {
-    if (!url || typeof url !== "string") return null;
-    const match = url.match(
-      /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
-    );
-    if (match && match[1]) return match[1];
-    if (/^[\w-]{11}$/.test(url.trim())) return url.trim();
-    return null;
-  };
-
-  const fetchVideos = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getCustomVideos();
-      setVideos(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      console.error("Failed to load portfolio videos:", err);
-      setError(err?.message || "Failed to load portfolio videos.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    fetchVideos();
-  }, [fetchVideos]);
+    let active = true;
+    const fetchAndEnrich = async () => {
+      try {
+        const rawVideos = await getCustomVideos(true);
+        if (!active) return;
 
-  // Add new video
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newVideo.url.trim()) {
-      alert("Please enter a YouTube URL.");
-      return;
-    }
-    setIsSubmittingNew(true);
-    try {
-      const res = await addVideo({
-        title: newVideo.title.trim() || "Archive Video",
-        url: newVideo.url.trim(),
-        description: newVideo.description.trim(),
-      });
-      if (!res.ok) {
-        alert("Failed to add video: " + res.error);
-        setIsSubmittingNew(false);
-        return;
+        // Enrich with noembed titles for accurate YouTube display
+        const enriched = await Promise.all(
+          rawVideos.map(async (v: any) => {
+            const ytId =
+              v.youtubeId ||
+              (v.url
+                ? v.url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/)?.[1]
+                : v.id);
+            const standardUrl =
+              v.youtubeUrl || v.url || `https://www.youtube.com/watch?v=${ytId}`;
+
+            if (v.title && v.title !== "Archive Video" && v.title !== "Untitled Video") {
+              return {
+                ...v,
+                youtubeId: ytId,
+                youtubeUrl: standardUrl,
+                thumbnail: v.thumbnail || `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`,
+              };
+            }
+
+            try {
+              const res = await fetch(`https://noembed.com/embed?url=${standardUrl}`);
+              if (res.ok) {
+                const json = await res.json();
+                if (json.title) {
+                  return {
+                    ...v,
+                    youtubeId: ytId,
+                    youtubeUrl: standardUrl,
+                    title: json.title,
+                    thumbnail: json.thumbnail_url || `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`,
+                    author: json.author_name || "AMITDIED",
+                  };
+                }
+              }
+            } catch {
+              // fallback
+            }
+
+            return {
+              ...v,
+              youtubeId: ytId,
+              youtubeUrl: standardUrl,
+              thumbnail: v.thumbnail || `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`,
+            };
+          })
+        );
+
+        if (active) {
+          setVideos(enriched);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("Error loading portfolio videos in admin:", err);
+        if (active) setLoading(false);
       }
-      const addedItem = res.data || {
-        id: extractYoutubeId(newVideo.url) || "custom-" + Date.now(),
-        title: newVideo.title.trim() || "Archive Video",
-        url: newVideo.url.trim(),
-        description: newVideo.description.trim(),
-      };
-      setVideos((prev) => [addedItem, ...prev]);
-      setNewVideo({ title: "", url: "", description: "" });
-      setIsAdding(false);
-    } catch (err: any) {
-      alert("Failed to add video: " + (err.message || "Unknown error"));
-    } finally {
-      setIsSubmittingNew(false);
-    }
-  };
+    };
 
-  // Start edit
-  const startEdit = (video: any) => {
-    setEditingVideo({
-      id: video.id,
-      title: video.title || "",
-      url: video.url || video.youtubeUrl || "",
-      description: video.description || "",
-    });
-    setIsAdding(false);
-  };
-
-  // Save edit
-  const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingVideo) return;
-    setIsUpdating(true);
-    try {
-      const res = await updateVideo(editingVideo.id, {
-        title: editingVideo.title.trim(),
-        url: editingVideo.url.trim(),
-        description: editingVideo.description.trim(),
-      });
-      if (!res.ok) {
-        alert("Failed to update video: " + res.error);
-        setIsUpdating(false);
-        return;
-      }
-      setVideos((prev) =>
-        prev.map((v) =>
-          v.id === editingVideo.id || v.youtubeId === editingVideo.id
-            ? { ...v, ...editingVideo, url: editingVideo.url.trim(), youtubeUrl: editingVideo.url.trim() }
-            : v
-        )
-      );
-      setEditingVideo(null);
-    } catch (err: any) {
-      alert("Failed to update video: " + (err.message || "Unknown error"));
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  // Delete video with confirm step and local state removal
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to remove this video from your website portfolio?")) {
-      return;
-    }
-    try {
-      const res = await deleteVideo(id);
-      if (!res.ok) {
-        alert("Failed to delete video: " + res.error);
-        return;
-      }
-      setVideos((prev) => prev.filter((v) => v.id !== id && v.youtubeId !== id));
-      if (editingVideo?.id === id) {
-        setEditingVideo(null);
-      }
-    } catch (err: any) {
-      alert("Failed to delete video: " + (err.message || "Unknown error"));
-    }
-  };
-
-  // Reordering swap
-  const moveVideo = async (currentIndex: number, direction: "up" | "down") => {
-    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= videos.length) return;
-
-    const newVideos = [...videos];
-    const currentVideo = newVideos[currentIndex];
-    const targetVideo = newVideos[targetIndex];
-
-    // Swap in array immediately for responsiveness
-    newVideos[currentIndex] = targetVideo;
-    newVideos[targetIndex] = currentVideo;
-    setVideos(newVideos);
-
-    // Persist new order
-    try {
-      await Promise.all([
-        (updateVideo as any)(currentVideo.id, { orderIndex: targetIndex }),
-        (updateVideo as any)(targetVideo.id, { orderIndex: currentIndex }),
-      ]);
-    } catch (err) {
-      console.error("Failed to persist reorder:", err);
-    }
-  };
+    fetchAndEnrich();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -1572,349 +1478,97 @@ function VideosManager() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800">
         <div>
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <span>Portfolio Videos</span>
-            <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono font-semibold">
-              {videos.length} VIDEOS
+            <span>Portfolio YouTube Videos</span>
+            <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono">
+              {videos.length} VIDEOS DETECTED
             </span>
           </h3>
-          <p className="text-xs text-zinc-400 mt-0.5 font-mono">
-            Manage public YouTube videos rendered in the custom portfolio player
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Source: <code className="text-zinc-300">lib/data.ts</code> (YOUTUBE_LINKS) & Firestore <code className="text-zinc-300">portfolio</code> collection
           </p>
         </div>
-        {!isAdding && !editingVideo && (
-          <button
-            onClick={() => setIsAdding(true)}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors shadow-lg active:scale-95 self-start sm:self-auto cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add New Video</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>READ-ONLY AUDIT MODE</span>
+          </span>
+        </div>
       </div>
 
-      {/* Loading state */}
-      {loading && (
+      {/* Architecture Confirmation Info Box */}
+      <div className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl space-y-2 font-mono text-xs">
+        <div className="text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-2 text-[11px]">
+          <span className="text-red-500">▶</span>
+          <span>Existing Portfolio Source Identification</span>
+        </div>
+        <p className="text-zinc-400 leading-relaxed text-[11px]">
+          All {videos.length} videos displayed below are the exact YouTube videos currently rendered by the public <strong className="text-white">Custom Retro OS YouTube Player</strong> (<code className="text-red-400">components/Portfolio.tsx</code>).
+        </p>
+      </div>
+
+      {/* Videos List (Read-Only) */}
+      {loading ? (
         <div className="p-12 text-center text-zinc-500 font-mono text-xs animate-pulse">
-          Loading portfolio videos...
+          Fetching and verifying existing Portfolio YouTube records...
         </div>
-      )}
-
-      {/* Error state */}
-      {error && !loading && (
-        <div className="p-4 bg-red-950/60 border border-red-900 rounded-xl text-red-300 text-xs font-mono flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-            <span>Error: {error}</span>
-          </div>
-          <button
-            onClick={fetchVideos}
-            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold uppercase transition-colors cursor-pointer shrink-0"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* Add New Video Form */}
-      {isAdding && (
-        <form
-          onSubmit={handleAdd}
-          className="bg-zinc-950 p-6 rounded-2xl border border-zinc-800 space-y-4 text-sm shadow-xl"
-        >
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-            <h4 className="font-bold text-white flex items-center gap-2">
-              <Plus className="w-4 h-4 text-red-500" />
-              <span>Add New Portfolio Video</span>
-            </h4>
-            <button
-              type="button"
-              onClick={() => setIsAdding(false)}
-              className="text-zinc-500 hover:text-white cursor-pointer p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
-              Video Title
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. AMITDIED - GOTHAM Visualizer"
-              value={newVideo.title}
-              onChange={(e) =>
-                setNewVideo({ ...newVideo, title: e.target.value })
-              }
-              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
-              YouTube URL <span className="text-red-500">*</span>
-            </label>
-            <input
-              required
-              type="url"
-              placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
-              value={newVideo.url}
-              onChange={(e) =>
-                setNewVideo({ ...newVideo, url: e.target.value })
-              }
-              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:border-red-600 outline-none font-mono text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-zinc-400 mb-1 text-xs uppercase tracking-wider">
-              Description (Optional)
-            </label>
-            <textarea
-              placeholder="Short description or notes..."
-              value={newVideo.description}
-              onChange={(e) =>
-                setNewVideo({ ...newVideo, description: e.target.value })
-              }
-              className="w-full bg-black border border-zinc-800 rounded-lg px-4 py-2 text-white h-20 focus:border-red-600 outline-none"
-            />
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setIsAdding(false)}
-              className="px-4 py-2 text-zinc-400 hover:text-white text-xs font-bold uppercase cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmittingNew}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition-colors shadow-lg cursor-pointer"
-            >
-              {isSubmittingNew ? "Adding Video..." : "Save Video"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Videos List */}
-      {!loading && (
+      ) : (
         <div className="space-y-3">
-          {videos.length === 0 && !error && (
-            <div className="p-8 text-center text-zinc-500 font-mono text-xs border border-dashed border-zinc-800 rounded-xl">
-              No portfolio videos found. Click &quot;Add New Video&quot; above to add one.
-            </div>
-          )}
-
           {videos.map((video, index) => {
-            const ytId = extractYoutubeId(video.url || video.youtubeUrl || video.id);
-            const rawUrl = video.url || video.youtubeUrl || (ytId ? `https://www.youtube.com/watch?v=${ytId}` : "");
-            const isEditingThis = editingVideo?.id === video.id || (editingVideo && editingVideo.id === video.youtubeId);
-
-            if (isEditingThis) {
-              return (
-                <form
-                  key={video.id || index}
-                  onSubmit={handleUpdate}
-                  className="bg-zinc-950 p-5 rounded-xl border border-red-600/50 space-y-3.5 shadow-xl text-sm"
-                >
-                  <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
-                    <div className="flex items-center gap-2">
-                      <Pencil className="w-3.5 h-3.5 text-red-500" />
-                      <span className="font-bold text-white text-xs uppercase tracking-wider">
-                        Edit Video #{String(index + 1).padStart(2, "0")}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setEditingVideo(null)}
-                      className="text-zinc-500 hover:text-white p-1 cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-zinc-400 mb-1 text-[11px] uppercase tracking-wider">
-                      Title
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={editingVideo.title}
-                      onChange={(e) =>
-                        setEditingVideo({ ...editingVideo, title: e.target.value })
-                      }
-                      className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-white focus:border-red-600 outline-none text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-zinc-400 mb-1 text-[11px] uppercase tracking-wider">
-                      YouTube URL
-                    </label>
-                    <input
-                      type="url"
-                      required
-                      value={editingVideo.url}
-                      onChange={(e) =>
-                        setEditingVideo({ ...editingVideo, url: e.target.value })
-                      }
-                      className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-white focus:border-red-600 outline-none font-mono text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-zinc-400 mb-1 text-[11px] uppercase tracking-wider">
-                      Description (Optional)
-                    </label>
-                    <textarea
-                      value={editingVideo.description}
-                      onChange={(e) =>
-                        setEditingVideo({ ...editingVideo, description: e.target.value })
-                      }
-                      className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-white h-16 focus:border-red-600 outline-none text-xs"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditingVideo(null)}
-                      className="px-3 py-1.5 text-zinc-400 hover:text-white text-xs font-bold uppercase cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isUpdating}
-                      className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition-colors shadow cursor-pointer"
-                    >
-                      {isUpdating ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                </form>
-              );
-            }
-
+            const ytId = video.youtubeId || video.id;
+            const ytUrl = video.youtubeUrl || video.url || `https://www.youtube.com/watch?v=${ytId}`;
             return (
               <div
                 key={video.id || index}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-colors"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-colors group"
               >
-                <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                  {/* Reorder Up/Down arrows */}
-                  <div className="flex flex-col gap-1 shrink-0">
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      onClick={() => moveVideo(index, "up")}
-                      className="w-7 h-7 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white disabled:opacity-20 disabled:hover:bg-zinc-800 disabled:hover:text-zinc-300 disabled:cursor-not-allowed rounded text-xs font-bold transition-colors cursor-pointer"
-                      title="Move Up"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === videos.length - 1}
-                      onClick={() => moveVideo(index, "down")}
-                      className="w-7 h-7 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white disabled:opacity-20 disabled:hover:bg-zinc-800 disabled:hover:text-zinc-300 disabled:cursor-not-allowed rounded text-xs font-bold transition-colors cursor-pointer"
-                      title="Move Down"
-                    >
-                      ▼
-                    </button>
+                <div className="flex items-center gap-4 min-w-0 flex-1">
+                  {/* Thumbnail */}
+                  <div className="relative w-24 h-16 rounded-lg overflow-hidden border border-zinc-800 flex-shrink-0 bg-black">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`}
+                      alt={video.title || "Video Thumbnail"}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute top-1 left-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-zinc-300">
+                      #{String(index + 1).padStart(2, "0")}
+                    </div>
                   </div>
 
-                  {/* Thumbnail */}
-                  {ytId ? (
-                    <div className="relative w-24 h-16 rounded-lg overflow-hidden border border-zinc-800 shrink-0 bg-black">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`}
-                        alt={video.title || "Video Thumbnail"}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute top-1 left-1 bg-black/80 px-1 py-0.2 rounded text-[9px] font-mono text-zinc-300">
-                        #{String(index + 1).padStart(2, "0")}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-24 h-16 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 text-zinc-600">
-                      <Video className="w-6 h-6" />
-                    </div>
-                  )}
-
-                  {/* Details: Title, Raw URL, Description */}
+                  {/* Video Details */}
                   <div className="overflow-hidden min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <h4 className="font-bold text-white text-sm truncate">
-                        {video.title || "Untitled Video"}
+                        {video.title || `Portfolio Video ${index + 1}`}
                       </h4>
-                      {ytId && (
-                        <span className="text-[10px] bg-red-950/60 text-red-400 border border-red-800/40 px-1.5 py-0.2 rounded font-mono">
-                          {ytId}
-                        </span>
-                      )}
+                      <span className="text-[10px] bg-red-950/60 text-red-400 border border-red-800/40 px-1.5 py-0.2 rounded font-mono">
+                        ID: {ytId}
+                      </span>
                     </div>
 
-                    {rawUrl && (
-                      <a
-                        href={rawUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-mono text-xs text-zinc-400 hover:text-red-400 truncate flex items-center gap-1.5 transition-colors mb-1"
-                      >
-                        <span className="truncate">{rawUrl}</span>
-                        <ExternalLink className="w-3 h-3 shrink-0" />
-                      </a>
-                    )}
-
-                    {video.description && (
-                      <p className="text-xs text-zinc-500 line-clamp-2 mt-0.5">
-                        {video.description}
-                      </p>
-                    )}
+                    <a
+                      href={ytUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-xs text-zinc-400 hover:text-red-400 truncate flex items-center gap-1.5 transition-colors"
+                    >
+                      <span className="truncate">{ytUrl}</span>
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    </a>
                   </div>
                 </div>
 
-                {/* Actions: Edit and Delete */}
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                  <button
-                    type="button"
-                    onClick={() => startEdit(video)}
-                    className="p-2 text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
-                    title="Edit Video"
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Edit</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(video.id)}
-                    className="p-2 text-red-500 hover:text-red-400 bg-red-950/30 hover:bg-red-900/50 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
-                    title="Delete Video"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </button>
+                {/* Status Indicator */}
+                <div className="flex items-center gap-3 flex-shrink-0 self-end sm:self-center font-mono text-xs">
+                  <span className="px-2.5 py-1 bg-emerald-950/40 border border-emerald-800/50 text-emerald-400 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>Public in Player</span>
+                  </span>
                 </div>
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* Dashed Add Button at bottom */}
-      {!isAdding && !editingVideo && !loading && videos.length > 0 && (
-        <button
-          onClick={() => setIsAdding(true)}
-          className="w-full py-4 border-2 border-dashed border-zinc-800 hover:border-red-600/50 text-zinc-500 hover:text-white rounded-2xl flex items-center justify-center space-x-2 transition-colors cursor-pointer"
-        >
-          <Plus className="w-5 h-5 text-red-500" />
-          <span>Add New Portfolio Video</span>
-        </button>
       )}
     </div>
   );
