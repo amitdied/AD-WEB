@@ -1,18 +1,18 @@
-import { NextResponse } from 'next/server';
-import { getCustomTransmissions } from '@/app/admin/data-actions';
-import { INSTAGRAM_TRANSMISSIONS } from '@/lib/data';
+import { NextResponse } from "next/server";
+import { getCustomTransmissions } from "@/app/admin/data-actions";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const list = await getCustomTransmissions();
-    if (Array.isArray(list) && list.length > 0) {
-      return NextResponse.json(list);
-    }
+    const list = await getCustomTransmissions(false); // only visible items
+    return NextResponse.json(Array.isArray(list) ? list : [], {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   } catch (error) {
-    console.error('Error reading Instagram transmissions:', error);
+    console.error("Error reading CCTV feeds:", error);
+    return NextResponse.json([], {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   }
-
-  return NextResponse.json(INSTAGRAM_TRANSMISSIONS);
 }

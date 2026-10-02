@@ -42,6 +42,8 @@ import {
   uploadFile,
   getCustomTransmissions,
   addTransmission,
+  updateTransmission,
+  toggleTransmissionVisibility,
   deleteTransmission,
   syncWithGoogleSheet,
   getGoogleStatus,
@@ -1766,121 +1768,147 @@ function extractYouTubeIdClient(url: string): string | null {
 // ==========================================
 
 function TransmissionsManager() {
-  const [transmissions, setTransmissions] = useState<any[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [addType, setAddType] = useState<"instagram" | "video">("instagram");
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
 
-  const [newTx, setNewTx] = useState({
-    camCode: "CAM-07 // STUDIO_SYNTH",
-    category: "cookup",
-    caption: "",
-    videoSnippetTitle: "",
-    imageUrl: "",
-    postUrl: "https://www.instagram.com/amitdied/",
-    likes: 120,
-    comments: 14,
+  const [form, setForm] = useState({
+    url: "",
+    title: "",
+    label: "",
+    location: "",
+    snippet: "",
+    status: "ONLINE",
   });
 
   const loadData = useCallback(async () => {
     try {
-      const data = await getCustomTransmissions();
-      setTransmissions(data);
+      const data = await getCustomTransmissions(true);
+      setItems(Array.isArray(data) ? data : []);
     } catch (e) {
-      console.error("Failed to load transmissions:", e);
+      console.error("Failed to load CCTV:", e);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    let active = true;
-    getCustomTransmissions()
-      .then((data) => {
-        if (active) {
-          setTransmissions(data);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+    loadData();
+  }, [loadData]);
+
+  const resetForm = () => {
+    setForm({
+      url: "",
+      title: "",
+      label: "",
+      location: "",
+      snippet: "",
+      status: "ONLINE",
+    });
+    setMediaFile(null);
+    setIsAdding(false);
+    setActionError(null);
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsUploading(true);
-
-    let imageUrl = newTx.imageUrl;
+    setActionError(null);
+    setSaving(true);
 
     try {
-      // If user selected a media file, upload directly to Google Drive MEDIA folder (1kaDYyeycE7jQkOjIV9xHQJaTCLWpXzqT)
-      if (mediaFile) {
-        const formData = new FormData();
-        formData.append("file", mediaFile);
-        formData.append("folderType", "media");
-        const uploadRes = await uploadFile(formData, "media");
+      let finalUrl = form.url.trim();
+
+      // Optional: upload custom video file to Drive MEDIA folder
+      if (addType === "video" && mediaFile) {
+        const fd = new FormData();
+        fd.append("file", mediaFile);
+        fd.append("folderType", "media");
+        const uploadRes = await uploadFile(fd, "media");
         if (!uploadRes.ok) {
-          alert("Failed to upload media: " + uploadRes.error);
-          setIsUploading(false);
+          setActionError(uploadRes.error);
+          setSaving(false);
           return;
         }
-        imageUrl = uploadRes.url;
+        finalUrl = uploadRes.url;
       }
 
-      if (!newTx.caption || (!imageUrl && !mediaFile)) {
-        alert("Please provide at least a caption and upload a media screenshot or URL.");
-        setIsUploading(false);
+      if (!finalUrl) {
+        setActionError("Paste a URL or upload a video file");
+        setSaving(false);
         return;
       }
 
       const res = await addTransmission({
-        ...newTx,
-        imageUrl,
-        tags: ["#amitdied", "#darktrap", "#producertransmission"],
+        type: addType,
+        url: finalUrl,
+        title: form.title.trim() || undefined,
+        label: form.label.trim() || undefined,
+        location: form.location.trim() || undefined,
+        snippet: form.snippet.trim() || undefined,
+        status: form.status.trim() || "ONLINE",
       });
+
       if (!res.ok) {
-        alert("Failed to add transmission: " + res.error);
-        setIsUploading(false);
+        setActionError(res.error);
         return;
       }
 
-      setIsAdding(false);
-      setMediaFile(null);
-      setNewTx({
-        camCode: "CAM-" + Math.floor(Math.random() * 90 + 10) + " // STUDIO",
-        category: "cookup",
-        caption: "",
-        videoSnippetTitle: "",
-        imageUrl: "",
-        postUrl: "https://www.instagram.com/amitdied/",
-        likes: Math.floor(Math.random() * 500 + 100),
-        comments: Math.floor(Math.random() * 50 + 10),
-      });
-      loadData();
-      alert("Transmission published & synced to Google Drive MEDIA & Google Sheet!");
-    } catch (e: any) {
-      alert("Failed to add transmission: " + (e.message || "Unknown error"));
+      resetForm();
+      await loadData();
+    } catch (err: any) {
+      setActionError(err?.message || "Failed to add");
     } finally {
-      setIsUploading(false);
+      setSaving(false);
+    }
+  };
+
+  const handleToggle = async (id: string, current: boolean) => {
+    setBusyId(id);
+    setActionError(null);
+    const next = !current;
+    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, visible: next } : x)));
+
+    try {
+      const res = await toggleTransmissionVisibility(id, next);
+      if (!res.ok) {
+        setItems((prev) => prev.map((x) => (x.id === id ? { ...x, visible: current } : x)));
+        setActionError(res.error);
+        return;
+      }
+      await loadData();
+    } catch (err: any) {
+      setItems((prev) => prev.map((x) => (x.id === id ? { ...x, visible: current } : x)));
+      setActionError(err?.message || "Toggle failed");
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this transmission from CCTV & Google Sheet?")) return;
+    if (!confirm("Delete this CCTV item permanently?")) return;
+    setBusyId(id);
+    setActionError(null);
+    const snapshot = items;
+    setItems((prev) => prev.filter((x) => x.id !== id));
+
     try {
       const res = await deleteTransmission(id);
       if (!res.ok) {
-        alert("Failed to delete transmission: " + res.error);
+        setItems(snapshot);
+        setActionError(res.error);
         return;
       }
-      loadData();
-    } catch (e: any) {
-      alert("Failed to delete transmission: " + (e.message || "Unknown error"));
+      await loadData();
+    } catch (err: any) {
+      setItems(snapshot);
+      setActionError(err?.message || "Delete failed");
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -1890,206 +1918,218 @@ function TransmissionsManager() {
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Radio className="w-5 h-5 text-red-500" />
-            <span>CCTV Feeds & Transmissions</span>
+            <span>CCTV Feed</span>
             <span className="text-xs bg-red-600/20 text-red-400 border border-red-600/30 px-2 py-0.5 rounded font-mono">
-              {transmissions.length} FEEDS
+              {items.length} FEEDS
             </span>
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Synced with Google Sheet <code className="text-zinc-300">CCTV</code> tab & Google Drive MEDIA folder
+            Source: Supabase <code className="text-zinc-300">cctv_items</code> — Instagram + custom video
           </p>
         </div>
-        <Link
-          href="/#cctv-feed"
-          target="_blank"
-          className="inline-flex items-center gap-2 px-3.5 py-2 bg-red-950/40 border border-red-800/60 hover:border-red-500 text-red-400 text-xs font-mono rounded-lg transition-colors self-start sm:self-auto"
+        <button
+          onClick={() => {
+            resetForm();
+            setIsAdding(true);
+          }}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-red-600/20 border border-red-600/40 hover:bg-red-600/30 text-red-400 text-xs font-bold uppercase tracking-wider rounded-lg"
         >
-          <ExternalLink className="w-3.5 h-3.5" />
-          <span>Preview CCTV Section</span>
-        </Link>
+          <Plus className="w-4 h-4" />
+          Add Feed
+        </button>
       </div>
 
+      {actionError && (
+        <div className="p-3 rounded-lg bg-red-950/50 border border-red-800 text-red-300 text-xs font-mono">
+          {actionError}
+        </div>
+      )}
+
+      {isAdding && (
+        <form
+          onSubmit={handleAdd}
+          className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 space-y-4 font-mono text-xs shadow-2xl"
+        >
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setAddType("instagram")}
+              className={`px-3 py-2 rounded border text-[10px] uppercase tracking-wider ${
+                addType === "instagram"
+                  ? "border-red-600 text-red-400 bg-red-950/30"
+                  : "border-zinc-700 text-zinc-500"
+              }`}
+            >
+              Instagram Link
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddType("video")}
+              className={`px-3 py-2 rounded border text-[10px] uppercase tracking-wider ${
+                addType === "video"
+                  ? "border-red-600 text-red-400 bg-red-950/30"
+                  : "border-zinc-700 text-zinc-500"
+              }`}
+            >
+              Custom Video
+            </button>
+          </div>
+
+          {addType === "instagram" ? (
+            <input
+              type="url"
+              value={form.url}
+              onChange={(e) => setForm({ ...form, url: e.target.value })}
+              placeholder="https://www.instagram.com/p/... or /reel/..."
+              className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+              required
+            />
+          ) : (
+            <div className="space-y-2">
+              <input
+                type="url"
+                value={form.url}
+                onChange={(e) => setForm({ ...form, url: e.target.value })}
+                placeholder="Video URL (optional if uploading file)"
+                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+              />
+              <input
+                type="file"
+                accept="video/*"
+                onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
+                className="w-full text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-800 file:text-zinc-200"
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="Title"
+              className="bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+            />
+            <input
+              type="text"
+              value={form.label}
+              onChange={(e) => setForm({ ...form, label: e.target.value })}
+              placeholder="CAM_01"
+              className="bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+            />
+            <input
+              type="text"
+              value={form.location}
+              onChange={(e) => setForm({ ...form, location: e.target.value })}
+              placeholder="STUDIO_UNDERGROUND"
+              className="bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+            />
+            <input
+              type="text"
+              value={form.status}
+              onChange={(e) => setForm({ ...form, status: e.target.value })}
+              placeholder="ONLINE"
+              className="bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+            />
+          </div>
+
+          <input
+            type="text"
+            value={form.snippet}
+            onChange={(e) => setForm({ ...form, snippet: e.target.value })}
+            placeholder="Short caption / snippet"
+            className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+          />
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider rounded disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Add to CCTV"}
+            </button>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-4 py-2 border border-zinc-700 text-zinc-400 text-xs uppercase tracking-wider rounded"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
       {loading ? (
-        <div className="py-12 text-center text-zinc-500 font-mono text-sm">
-          Loading transmissions...
+        <div className="p-12 text-center text-zinc-500 font-mono text-xs animate-pulse">
+          Loading cctv_items...
+        </div>
+      ) : items.length === 0 ? (
+        <div className="p-12 text-center text-zinc-500 font-mono text-xs">
+          No CCTV feeds yet. Add an Instagram link or custom video.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {transmissions.map((tx) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {items.map((tx) => (
             <div
               key={tx.id}
-              className="bg-zinc-900/70 border border-zinc-800 rounded-xl overflow-hidden flex flex-col justify-between"
+              className={`bg-zinc-900/60 border rounded-xl overflow-hidden ${
+                tx.visible === false ? "border-zinc-800 opacity-60" : "border-zinc-800"
+              }`}
             >
-              <div className="p-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between text-xs font-mono">
-                <span className="text-red-400 font-bold truncate">{tx.camCode}</span>
-                <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded text-zinc-300 uppercase">
-                  {tx.category}
-                </span>
-              </div>
-
-              <div className="relative h-44 bg-zinc-950 overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={tx.imageUrl}
-                  alt={tx.caption}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-
               <div className="p-4 flex-1 flex flex-col justify-between font-mono">
                 <div>
-                  <div className="text-xs text-white font-bold mb-1 truncate">
-                    {tx.videoSnippetTitle || "SNIPPET_RECORDING"}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-[10px] text-red-400 font-bold">{tx.label}</span>
+                    <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 rounded">
+                      {tx.type}
+                    </span>
+                    <span className="text-[10px] text-zinc-600">{tx.id}</span>
+                    {tx.visible === false && (
+                      <span className="text-[10px] text-zinc-500">HIDDEN</span>
+                    )}
                   </div>
-                  <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
-                    {tx.caption}
+                  <div className="text-xs text-white font-bold mb-1 truncate">
+                    {tx.title || "UNTITLED"}
+                  </div>
+                  <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed mb-2">
+                    {tx.snippet || tx.url}
                   </p>
+                  <a
+                    href={tx.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-zinc-500 hover:text-red-400 truncate block"
+                  >
+                    {tx.url}
+                  </a>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between text-xs">
-                  <span className="text-zinc-500 text-[11px]">{tx.likes} Likes</span>
-                  <button
-                    onClick={() => handleDelete(tx.id)}
-                    className="p-1.5 text-zinc-500 hover:text-red-500 hover:bg-zinc-800 rounded transition-colors"
-                    title="Delete Transmission"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between">
+                  <span className="text-[10px] text-zinc-600">{tx.location}</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      disabled={busyId === tx.id}
+                      onClick={() => handleToggle(tx.id, tx.visible !== false)}
+                      className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded"
+                      title={tx.visible === false ? "Show" : "Hide"}
+                    >
+                      {tx.visible === false ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                    <button
+                      disabled={busyId === tx.id}
+                      onClick={() => handleDelete(tx.id)}
+                      className="p-1.5 text-zinc-500 hover:text-red-500 hover:bg-zinc-800 rounded"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           ))}
         </div>
-      )}
-
-      {isAdding ? (
-        <form
-          onSubmit={handleAdd}
-          className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 space-y-4 font-mono text-xs shadow-2xl"
-        >
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Broadcast CCTV Transmission (Drive MEDIA Upload)
-            </h3>
-            <button
-              type="button"
-              onClick={() => setIsAdding(false)}
-              className="text-zinc-500 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-zinc-400 mb-1">CCTV Code</label>
-              <input
-                type="text"
-                value={newTx.camCode}
-                onChange={(e) => setNewTx({ ...newTx, camCode: e.target.value })}
-                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
-                placeholder="CAM-08 // MASTER_LAB"
-              />
-            </div>
-            <div>
-              <label className="block text-zinc-400 mb-1">Category</label>
-              <select
-                value={newTx.category}
-                onChange={(e) => setNewTx({ ...newTx, category: e.target.value })}
-                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
-              >
-                <option value="cookup">Studio Cookup</option>
-                <option value="placement">Placement</option>
-                <option value="session">Vocals / Session</option>
-                <option value="lore">Aesthetic / Lore</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-zinc-400 mb-1">Snippet / Title Tag</label>
-            <input
-              type="text"
-              value={newTx.videoSnippetTitle}
-              onChange={(e) => setNewTx({ ...newTx, videoSnippetTitle: e.target.value })}
-              className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
-              placeholder="e.g. MOOG_808_EXPERIMENT.WAV"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3 bg-zinc-900/60 border border-zinc-800/80 rounded-xl">
-              <label className="block text-zinc-300 mb-1.5 font-semibold flex items-center justify-between">
-                <span>Upload Media Image/Video</span>
-                <span className="text-[10px] text-blue-400 font-mono">→ DRIVE MEDIA FOLDER</span>
-              </label>
-              <input
-                type="file"
-                accept="image/*,video/*"
-                onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
-                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-zinc-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-[10px] file:bg-red-600/20 file:text-red-400 font-mono text-xs cursor-pointer"
-              />
-            </div>
-
-            <div>
-              <label className="block text-zinc-400 mb-1">Or Existing Image URL</label>
-              <input
-                type="text"
-                value={newTx.imageUrl}
-                onChange={(e) => setNewTx({ ...newTx, imageUrl: e.target.value })}
-                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
-                placeholder="https://... or leave empty if uploading file above"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-zinc-400 mb-1">Instagram Post / Reel Link</label>
-            <input
-              type="text"
-              value={newTx.postUrl}
-              onChange={(e) => setNewTx({ ...newTx, postUrl: e.target.value })}
-              className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
-              placeholder="https://www.instagram.com/p/... or https://www.instagram.com/reel/..."
-            />
-          </div>
-
-          <div>
-            <label className="block text-zinc-400 mb-1">Caption / Notes *</label>
-            <textarea
-              value={newTx.caption}
-              onChange={(e) => setNewTx({ ...newTx, caption: e.target.value })}
-              className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600 h-20"
-              placeholder="Behind the scenes details, analog chain, or session summary..."
-              required
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setIsAdding(false)}
-              className="px-4 py-2 text-zinc-400 hover:text-white uppercase tracking-wider font-bold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isUploading}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold uppercase tracking-wider transition-colors disabled:opacity-50 shadow-lg"
-            >
-              {isUploading ? "Uploading to Drive MEDIA..." : "Broadcast Transmission"}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <button
-          onClick={() => setIsAdding(true)}
-          className="w-full py-4 border-2 border-dashed border-zinc-800 hover:border-red-600/50 text-zinc-400 hover:text-white rounded-2xl flex items-center justify-center gap-2 font-mono text-xs uppercase tracking-widest transition-colors"
-        >
-          <Plus className="w-4 h-4 text-red-500" />
-          <span>Add New CCTV / Media Transmission</span>
-        </button>
       )}
     </div>
   );

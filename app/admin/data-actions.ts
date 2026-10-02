@@ -842,100 +842,222 @@ export async function deleteVideo(id: string): Promise<ActionResponse> {
 }
 
 // ==========================================
-// CCTV / INSTAGRAM TRANSMISSIONS MANAGEMENT
+// CCTV FEED (SUPABASE cctv_items)
 // ==========================================
 
-export async function getCustomTransmissions() {
-  const db = readDb();
-
-  try {
-    const tokens = getStoredTokens();
-    if (tokens?.access_token) {
-      const sheetCctv = await readCctvFromSheet();
-      if (Array.isArray(sheetCctv) && sheetCctv.length > 0) {
-        db.instagramTransmissions = sheetCctv;
-        writeDb(db);
-        return sheetCctv;
-      }
-    }
-  } catch (e) {
-    console.warn("Could not read transmissions from Google Sheet:", e);
-  }
-
-  if (Array.isArray(db.instagramTransmissions) && db.instagramTransmissions.length > 0) {
-    return db.instagramTransmissions;
-  }
-  return INSTAGRAM_TRANSMISSIONS;
+export interface CctvItem {
+  id: string;
+  type: "instagram" | "video";
+  url: string;
+  title: string;
+  label: string;
+  location: string;
+  snippet: string;
+  status: string;
+  visible: boolean;
+  order_index: number;
+  created_at?: string;
 }
 
-export async function addTransmission(data: any): Promise<ActionResponse> {
+function mapCctvRow(row: any): CctvItem {
+  return {
+    id: row.id,
+    type: row.type === "video" ? "video" : "instagram",
+    url: row.url || "",
+    title: row.title || "",
+    label: row.label || "CAM_01",
+    location: row.location || "STUDIO",
+    snippet: row.snippet || "",
+    status: row.status || "ONLINE",
+    visible: row.visible !== false,
+    order_index: typeof row.order_index === "number" ? row.order_index : 0,
+    created_at: row.created_at || undefined,
+  };
+}
+
+export async function getCustomTransmissions(
+  includeHidden = true
+): Promise<CctvItem[]> {
+  try {
+    const supabase = getSupabaseAdmin();
+    let q = supabase
+      .from("cctv_items")
+      .select("*")
+      .order("order_index", { ascending: true });
+
+    if (!includeHidden) {
+      q = q.eq("visible", true);
+    }
+
+    const { data, error } = await q;
+    if (error) {
+      console.error("[getCustomTransmissions]", error.message);
+      return [];
+    }
+    return (data || []).map(mapCctvRow);
+  } catch (e: any) {
+    console.error("[getCustomTransmissions]", e?.message || e);
+    return [];
+  }
+}
+
+export async function addTransmission(data: {
+  type?: "instagram" | "video";
+  url: string;
+  title?: string;
+  label?: string;
+  location?: string;
+  snippet?: string;
+  status?: string;
+}): Promise<ActionResponse> {
   try {
     const session = await getAdminSession();
-    if (!session || !session.isAuthenticated) {
+    if (!session?.isAuthenticated) {
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const db = readDb();
-    if (!Array.isArray(db.instagramTransmissions)) {
-      db.instagramTransmissions = [...INSTAGRAM_TRANSMISSIONS];
+    const url = (data.url || "").trim();
+    if (!url) {
+      return { ok: false, error: "MISSING_URL: Paste an Instagram or video URL" };
     }
-    const newTx = {
-      id: "tx-" + Date.now().toString(),
-      camCode: String(data.camCode || "CAM-" + Math.floor(Math.random() * 90 + 10) + " // FEED"),
-      category: data.category || "cookup",
-      caption: String(data.caption || ""),
-      timestamp: "Just now",
-      likes: Number(data.likes) || 100,
-      comments: Number(data.comments) || 12,
-      postUrl: String(data.postUrl || "https://www.instagram.com/amitdied/"),
-      imageUrl: String(
-        data.imageUrl ||
-          "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=1000&auto=format&fit=crop"
-      ),
-      videoSnippetTitle: data.videoSnippetTitle
-        ? String(data.videoSnippetTitle)
-        : "TRANSMISSION_RAW.WAV",
-      tags: Array.isArray(data.tags) ? data.tags : ["#amitdied", "#darktrap"],
-    };
-    db.instagramTransmissions.unshift(newTx);
-    writeDb(db);
 
-    // Sync to Google Sheet CCTV tab
-    await writeAllCctvToSheet(db.instagramTransmissions);
+    const type: "instagram" | "video" =
+      data.type === "video" ||
+      /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) ||
+      url.includes("drive.google.com") ||
+      url.includes("/api/media")
+        ? "video"
+        : "instagram";
+
+    if (type === "instagram" && !url.includes("instagram.com")) {
+      return {
+        ok: false,
+        error: "INVALID_URL: For Instagram type, use an instagram.com post/reel link",
+      };
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { data: rows } = await supabase.from("cctv_items").select("id, order_index");
+
+    let nextNum = 1;
+    let maxOrder = 0;
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        const m = String(row.id).match(/^cctv-(\d+)$/);
+        if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+        if (typeof row.order_index === "number") {
+          maxOrder = Math.max(maxOrder, row.order_index);
+        }
+      }
+    }
+
+    const camNum = String(nextNum).padStart(2, "0");
+    const insertPayload = {
+      id: `cctv-${nextNum}`,
+      type,
+      url,
+      title: (data.title || "").trim() || (type === "instagram" ? "INSTAGRAM_FEED" : "CUSTOM_VIDEO"),
+      label: (data.label || "").trim() || `CAM_${camNum}`,
+      location: (data.location || "").trim() || "STUDIO_UNDERGROUND",
+      snippet: (data.snippet || "").trim() || "",
+      status: (data.status || "").trim() || "ONLINE",
+      visible: true,
+      order_index: maxOrder + 1,
+    };
+
+    const { data: created, error } = await supabase
+      .from("cctv_items")
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (error) return { ok: false, error: `ADD_FAILED: ${error.message}` };
 
     revalidatePath("/");
     revalidatePath("/admin");
-    return { ok: true, data: newTx };
+    return { ok: true, data: mapCctvRow(created) };
   } catch (e: any) {
-    const safeError = formatSafeError(e);
-    console.error("[ADD TRANSMISSION ERROR]", safeError, e?.message);
-    return { ok: false, error: safeError };
+    return { ok: false, error: formatSafeError(e) };
   }
+}
+
+export async function updateTransmission(
+  id: string,
+  patch: {
+    url?: string;
+    title?: string;
+    label?: string;
+    location?: string;
+    snippet?: string;
+    status?: string;
+    visible?: boolean;
+    order_index?: number;
+    type?: "instagram" | "video";
+  }
+): Promise<ActionResponse> {
+  try {
+    const session = await getAdminSession();
+    if (!session?.isAuthenticated) {
+      return { ok: false, error: "UNAUTHORIZED: Admin session required" };
+    }
+
+    const supabase = getSupabaseAdmin();
+    const update: Record<string, any> = {};
+
+    if (typeof patch.url === "string") update.url = patch.url.trim();
+    if (typeof patch.title === "string") update.title = patch.title.trim();
+    if (typeof patch.label === "string") update.label = patch.label.trim();
+    if (typeof patch.location === "string") update.location = patch.location.trim();
+    if (typeof patch.snippet === "string") update.snippet = patch.snippet.trim();
+    if (typeof patch.status === "string") update.status = patch.status.trim();
+    if (typeof patch.visible === "boolean") update.visible = patch.visible;
+    if (typeof patch.order_index === "number") update.order_index = patch.order_index;
+    if (patch.type === "instagram" || patch.type === "video") update.type = patch.type;
+
+    if (Object.keys(update).length === 0) {
+      return { ok: false, error: "NO_CHANGES" };
+    }
+
+    const { data, error } = await supabase
+      .from("cctv_items")
+      .update(update)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) return { ok: false, error: `UPDATE_FAILED: ${error.message}` };
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    return { ok: true, data: mapCctvRow(data) };
+  } catch (e: any) {
+    return { ok: false, error: formatSafeError(e) };
+  }
+}
+
+export async function toggleTransmissionVisibility(
+  id: string,
+  visible: boolean
+): Promise<ActionResponse> {
+  return updateTransmission(id, { visible });
 }
 
 export async function deleteTransmission(id: string): Promise<ActionResponse> {
   try {
     const session = await getAdminSession();
-    if (!session || !session.isAuthenticated) {
+    if (!session?.isAuthenticated) {
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const db = readDb();
-    if (Array.isArray(db.instagramTransmissions)) {
-      db.instagramTransmissions = db.instagramTransmissions.filter(
-        (t: any) => t.id !== id
-      );
-      writeDb(db);
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("cctv_items").delete().eq("id", id);
 
-      // Sync to Google Sheet CCTV tab
-      await writeAllCctvToSheet(db.instagramTransmissions);
-    }
+    if (error) return { ok: false, error: `DELETE_FAILED: ${error.message}` };
+
     revalidatePath("/");
     revalidatePath("/admin");
     return { ok: true, data: id };
   } catch (e: any) {
-    const safeError = formatSafeError(e);
-    console.error("[DELETE TRANSMISSION ERROR]", safeError, e?.message);
-    return { ok: false, error: safeError };
+    return { ok: false, error: formatSafeError(e) };
   }
 }
