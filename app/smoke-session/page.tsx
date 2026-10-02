@@ -1,23 +1,71 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import Link from "next/link";
 
-type RollingStage = 'HIDDEN' | 'START' | 'GRIND' | 'PAPER' | 'FILL' | 'ROLL' | 'SUCCESS';
+type Character = {
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  atk: number;
+  def: number;
+  speed: number;
+  special: string;
+};
+
+type Enemy = {
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  atk: number;
+  def: number;
+};
+
+type Item = {
+  id: string;
+  name: string;
+  effect: string;
+  value: number;
+};
+
+const HEROES: Character[] = [
+  { id: "amit", name: "AMITDIED", hp: 120, maxHp: 120, atk: 18, def: 12, speed: 14, special: "Focus" },
+  { id: "chiku", name: "CHIKU", hp: 95, maxHp: 95, atk: 22, def: 8, speed: 18, special: "Chaos" },
+  { id: "sahil", name: "SAHIL", hp: 100, maxHp: 100, atk: 14, def: 11, speed: 16, special: "Analyze" },
+  { id: "addy", name: "ADDY", hp: 150, maxHp: 150, atk: 16, def: 18, speed: 10, special: "Guard" },
+];
+
+const ZONES = [
+  { id: "block", name: "THE BLOCK", desc: "Your starting ground" },
+  { id: "dealer", name: "DEALER CORNER", desc: "Business first" },
+  { id: "rooftop", name: "THE ROOFTOP", desc: "Link up with the crew" },
+];
 
 export default function SmokeSessionPage() {
-  // ==========================================
-  // 1. ORIGINAL PAGE STATE
-  // ==========================================
+  // Video session state
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Game state
+  const [mode, setMode] = useState<"session" | "game">("session");
+  const [screen, setScreen] = useState<"start" | "map" | "combat" | "end">("start");
+  const [zoneIndex, setZoneIndex] = useState(0);
+  const [party, setParty] = useState<Character[]>([{ ...HEROES[0] }]);
+  const [inventory, setInventory] = useState<Item[]>([
+    { id: "pain", name: "Painkiller", effect: "heal", value: 40 },
+  ]);
+  const [enemies, setEnemies] = useState<Enemy[]>([]);
+  const [log, setLog] = useState<string[]>([]);
+  const [activeHero, setActiveHero] = useState(0);
+  const [focusActive, setFocusActive] = useState(false);
+  const [analyzed, setAnalyzed] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
     if (isPlaying) {
+      video.currentTime = 0;
       video.play().catch(() => {});
     } else {
       video.pause();
@@ -25,223 +73,358 @@ export default function SmokeSessionPage() {
     }
   }, [isPlaying]);
 
-  const toggle = () => setIsPlaying((prev) => !prev);
+  const addLog = (msg: string) => setLog((prev) => [msg, ...prev].slice(0, 6));
 
-
-  // ==========================================
-  // 2. SECRET ROLLING GAME STATE & LOGIC
-  // ==========================================
-  const [stage, setStage] = useState<RollingStage>('HIDDEN');
-  const [grindProgress, setGrindProgress] = useState(0);
-  const [fillPos, setFillPos] = useState(0);
-  const [fillDirection, setFillDirection] = useState(1);
-  const [shake, setShake] = useState(false);
-
-  const triggerShake = () => {
-    setShake(true);
-    setTimeout(() => setShake(false), 200);
+  const startGame = () => {
+    setMode("game");
+    setScreen("start");
+    setZoneIndex(0);
+    setParty([{ ...HEROES[0] }]);
+    setInventory([{ id: "pain", name: "Painkiller", effect: "heal", value: 40 }]);
+    setLog(["Night starts. Move carefully."]);
+    setIsPlaying(false);
   };
 
-  useEffect(() => {
-    if (stage !== 'FILL') return;
-    const interval = setInterval(() => {
-      setFillPos((prev) => {
-        if (prev >= 100) { setFillDirection(-1); return 99; }
-        if (prev <= 0) { setFillDirection(1); return 1; }
-        return prev + 3 * fillDirection;
-      });
-    }, 16);
-    return () => clearInterval(interval);
-  }, [stage, fillDirection]);
-
-  const handleGrind = () => {
-    setGrindProgress((prev) => {
-      const next = prev + 15;
-      triggerShake();
-      if (next >= 100) {
-        setTimeout(() => setStage('PAPER'), 300);
-        return 100;
-      }
-      return next;
-    });
+  const exitGame = () => {
+    setMode("session");
+    setScreen("start");
   };
 
-  const handleFillTap = () => {
-    if (fillPos > 40 && fillPos < 60) {
-      triggerShake();
-      setStage('ROLL');
-    } else {
-      triggerShake(); // Miss penalty
+  const beginNight = () => {
+    setScreen("map");
+  };
+
+  const moveToZone = (index: number) => {
+    setZoneIndex(index);
+    if (index === 1) {
+      setEnemies([{ id: "e1", name: "Street Opp", hp: 60, maxHp: 60, atk: 12, def: 6 }]);
+      setScreen("combat");
+      addLog("Someone steps up at the corner.");
+    } else if (index === 2) {
+      setParty(HEROES.map((h) => ({ ...h })));
+      setEnemies([
+        { id: "e1", name: "Street Opp", hp: 55, maxHp: 55, atk: 11, def: 5 },
+        { id: "e2", name: "Street Opp", hp: 55, maxHp: 55, atk: 11, def: 5 },
+      ]);
+      setScreen("combat");
+      addLog("Crew is here. Trouble follows.");
     }
   };
 
+  const attack = () => {
+    const livingEnemies = enemies.filter((e) => e.hp > 0);
+    if (livingEnemies.length === 0) return;
 
-  // ==========================================
-  // 3. RENDER (YOUR UI + THE HIDDEN GAME)
-  // ==========================================
-  return (
-    <div className={`min-h-screen bg-black text-white relative overflow-hidden flex flex-col items-center justify-center ${shake ? 'animate-shake' : ''}`}>
-      
-      {/* --- YOUR ORIGINAL UI --- */}
-      <Link
-        href="/"
-        className="absolute top-6 left-6 text-sm tracking-widest uppercase hover:text-red-500 transition-colors z-40"
-      >
-        ← Back
-      </Link>
+    const hero = party[activeHero];
+    const target = livingEnemies[0];
+    let dmg = Math.max(5, hero.atk - target.def + Math.floor(Math.random() * 6));
+    if (focusActive) {
+      dmg *= 2;
+      setFocusActive(false);
+      addLog("Focus activated.");
+    }
+    if (analyzed) {
+      dmg = Math.floor(dmg * 1.3);
+      setAnalyzed(false);
+    }
 
-      <div className="relative flex flex-col items-center z-10">
-        <video
-          ref={videoRef}
-          src="/smoking-loop.mp4"
-          muted
-          loop
-          playsInline
-          className="w-full max-w-[420px] h-auto object-contain"
-          style={{ maxHeight: "70vh" }}
-        />
+    const newEnemies = enemies.map((e) =>
+      e.id === target.id ? { ...e, hp: Math.max(0, e.hp - dmg) } : e
+    );
+    setEnemies(newEnemies);
+    addLog(`${hero.name} hits ${target.name} for ${dmg}`);
 
-        <button
-          onClick={toggle}
-          className={`mt-10 px-8 py-3 text-xs tracking-[0.25em] uppercase font-medium transition-all duration-300 border ${
-            isPlaying
-              ? "border-orange-500 text-orange-400 hover:bg-orange-500/10"
-              : "border-white/40 text-white hover:border-white hover:bg-white/5"
-          }`}
+    if (newEnemies.every((e) => e.hp <= 0)) {
+      addLog("Fight over.");
+      if (zoneIndex >= 2) {
+        setScreen("end");
+      } else {
+        setScreen("map");
+        setInventory((prev) => [
+          ...prev,
+          { id: `pain-${Date.now()}`, name: "Painkiller", effect: "heal", value: 40 },
+        ]);
+      }
+      return;
+    }
+
+    setTimeout(() => enemyTurn(newEnemies), 600);
+  };
+
+  const enemyTurn = (currentEnemies: Enemy[]) => {
+    const alive = currentEnemies.filter((e) => e.hp > 0);
+    if (alive.length === 0) return;
+
+    const enemy = alive[0];
+    const targetIndex = party.findIndex((p) => p.hp > 0);
+    if (targetIndex === -1) {
+      addLog("Crew is down...");
+      setScreen("end");
+      return;
+    }
+
+    const target = party[targetIndex];
+    const dmg = Math.max(4, enemy.atk - target.def + Math.floor(Math.random() * 5));
+    setParty((prev) =>
+      prev.map((p, i) => (i === targetIndex ? { ...p, hp: Math.max(0, p.hp - dmg) } : p))
+    );
+    addLog(`${enemy.name} hits ${target.name} for ${dmg}`);
+  };
+
+  const useSpecial = () => {
+    const hero = party[activeHero];
+    if (hero.id === "amit") {
+      setFocusActive(true);
+      addLog("AMITDIED prepares Focus.");
+    } else if (hero.id === "chiku") {
+      const target = enemies.find((e) => e.hp > 0);
+      if (!target) return;
+      const dmg = 15 + Math.floor(Math.random() * 21);
+      setEnemies((prev) =>
+        prev.map((e) => (e.id === target.id ? { ...e, hp: Math.max(0, e.hp - dmg) } : e))
+      );
+      addLog(`CHIKU Chaos hits for ${dmg}`);
+    } else if (hero.id === "sahil") {
+      setAnalyzed(true);
+      addLog("SAHIL analyzes the target.");
+    } else {
+      addLog("ADDY guards the crew.");
+    }
+    setTimeout(() => enemyTurn(enemies), 500);
+  };
+
+  const useItem = (item: Item) => {
+    if (item.effect === "heal") {
+      setParty((prev) =>
+        prev.map((p, i) =>
+          i === activeHero ? { ...p, hp: Math.min(p.maxHp, p.hp + item.value) } : p
+        )
+      );
+      addLog(`Used ${item.name}`);
+    }
+    setInventory((prev) => prev.filter((i) => i.id !== item.id));
+  };
+
+  // ===================== VIDEO SESSION (default) =====================
+  if (mode === "session") {
+    return (
+      <div className="min-h-screen bg-black text-white relative overflow-hidden flex flex-col items-center justify-center">
+        <a
+          href="/"
+          className="absolute top-6 left-6 text-sm tracking-widest uppercase hover:text-red-500 transition-colors z-50"
         >
-          {isPlaying ? "PUT OUT" : "MAKE HIM SMOKE"}
+          ← Back
+        </a>
+
+        {/* Hidden corner game entrance */}
+        <button
+          onClick={startGame}
+          className="absolute bottom-6 right-6 text-[10px] tracking-[0.25em] uppercase text-zinc-600 hover:text-red-500 transition-colors z-50"
+        >
+          // NIGHT
+        </button>
+
+        <div className="relative flex flex-col items-center">
+          <video
+            ref={videoRef}
+            src="/smoking-loop.mp4"
+            muted
+            loop
+            playsInline
+            className="w-full max-w-[420px] h-auto object-contain"
+            style={{ maxHeight: "70vh" }}
+          />
+
+          <button
+            onClick={() => setIsPlaying((prev) => !prev)}
+            className={`mt-10 px-8 py-3 text-xs tracking-[0.25em] uppercase font-medium transition-all duration-300 border ${
+              isPlaying
+                ? "border-orange-500 text-orange-400 hover:bg-orange-500/10"
+                : "border-white/40 text-white hover:border-white hover:bg-white/5"
+            }`}
+          >
+            {isPlaying ? "PUT OUT" : "MAKE HIM SMOKE"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ===================== GAME =====================
+  if (screen === "start") {
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center relative">
+        <button
+          onClick={exitGame}
+          className="absolute top-6 left-6 text-xs tracking-widest uppercase hover:text-red-500"
+        >
+          ← Back to Session
+        </button>
+        <h1 className="text-5xl md:text-7xl font-black tracking-tighter uppercase mb-4">AMITDIED</h1>
+        <p className="text-red-600 tracking-[0.3em] text-sm mb-10">NIGHT SESSION</p>
+        <button
+          onClick={beginNight}
+          className="px-10 py-4 border border-white/30 hover:border-red-600 hover:text-red-500 tracking-[0.25em] text-xs uppercase transition-all"
+        >
+          Enter The Night
         </button>
       </div>
-      {/* --- END ORIGINAL UI --- */}
+    );
+  }
 
+  if (screen === "map") {
+    const zone = ZONES[zoneIndex];
+    return (
+      <div className="min-h-screen bg-black text-white p-6 relative">
+        <button
+          onClick={exitGame}
+          className="absolute top-6 left-6 text-xs tracking-widest uppercase hover:text-red-500"
+        >
+          ← Back to Session
+        </button>
+        <div className="max-w-xl mx-auto mt-16">
+          <h2 className="text-3xl font-black tracking-tighter mb-2">{zone.name}</h2>
+          <p className="text-zinc-500 text-sm mb-8">{zone.desc}</p>
 
-      {/* --- SECRET CORNER BUTTON --- */}
-      <button
-        onClick={() => setStage('START')}
-        className="fixed bottom-6 right-6 z-40 text-xs font-mono text-red-900/40 hover:text-red-500 hover:shadow-[0_0_10px_red] transition-all duration-300 uppercase tracking-widest cursor-crosshair border border-transparent hover:border-red-900/50 px-2 py-1"
-      >
-        [ Roll Blunt ]
-      </button>
+          <div className="space-y-3 mb-10">
+            {ZONES.map((z, i) => (
+              <button
+                key={z.id}
+                disabled={i < zoneIndex}
+                onClick={() => moveToZone(i)}
+                className={`w-full text-left px-5 py-4 border transition-all ${
+                  i === zoneIndex
+                    ? "border-red-600 bg-red-950/20"
+                    : i < zoneIndex
+                    ? "border-zinc-800 text-zinc-600"
+                    : "border-zinc-700 hover:border-red-600"
+                }`}
+              >
+                <div className="text-xs tracking-widest uppercase">{z.name}</div>
+              </button>
+            ))}
+          </div>
 
+          <div className="border border-zinc-800 p-4 mb-6">
+            <div className="text-xs text-zinc-500 mb-2 tracking-widest">PARTY</div>
+            {party.map((p) => (
+              <div key={p.id} className="flex justify-between text-sm py-1">
+                <span>{p.name}</span>
+                <span className="text-zinc-400">
+                  {p.hp}/{p.maxHp} HP
+                </span>
+              </div>
+            ))}
+          </div>
 
-      {/* --- THE HIDDEN ROLLING GAME OVERLAY --- */}
-      <AnimatePresence>
-        {stage !== 'HIDDEN' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center selection:bg-red-900 font-mono"
-          >
-            {/* CRT Overlay */}
-            <div className="pointer-events-none absolute inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] opacity-20 mix-blend-overlay"></div>
-            
-            {/* Abort Game Button */}
-            <button 
-              onClick={() => { setStage('HIDDEN'); setGrindProgress(0); }}
-              className="absolute top-6 right-6 text-red-900 hover:text-red-500 z-50 font-bold uppercase tracking-widest"
+          <div className="text-xs text-zinc-600 space-y-1">
+            {log.map((l, i) => (
+              <div key={i}>{l}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === "combat") {
+    return (
+      <div className="min-h-screen bg-black text-white p-6 relative">
+        <div className="max-w-2xl mx-auto mt-10">
+          <h2 className="text-2xl font-black tracking-tighter mb-6 text-red-500">COMBAT</h2>
+
+          <div className="mb-8 space-y-3">
+            {enemies.map((e) => (
+              <div key={e.id} className="border border-zinc-800 p-3">
+                <div className="flex justify-between text-sm mb-1">
+                  <span>{e.name}</span>
+                  <span>
+                    {e.hp}/{e.maxHp}
+                  </span>
+                </div>
+                <div className="h-1 bg-zinc-900">
+                  <div
+                    className="h-full bg-red-600 transition-all"
+                    style={{ width: `${(e.hp / e.maxHp) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mb-8 space-y-2">
+            {party.map((p, i) => (
+              <button
+                key={p.id}
+                onClick={() => setActiveHero(i)}
+                className={`w-full text-left border p-3 transition-all ${
+                  i === activeHero ? "border-red-600 bg-red-950/10" : "border-zinc-800"
+                }`}
+              >
+                <div className="flex justify-between text-sm">
+                  <span>{p.name}</span>
+                  <span>
+                    {p.hp}/{p.maxHp}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <button
+              onClick={attack}
+              className="border border-zinc-700 py-3 text-xs tracking-widest uppercase hover:border-red-600"
             >
-              [ Abort ]
+              Attack
             </button>
+            <button
+              onClick={useSpecial}
+              className="border border-zinc-700 py-3 text-xs tracking-widest uppercase hover:border-red-600"
+            >
+              Special
+            </button>
+          </div>
 
-            <AnimatePresence mode="wait">
-              {/* STAGE: START */}
-              {stage === 'START' && (
-                <motion.div key="start" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center z-10">
-                  <h1 className="text-6xl font-black mb-8 tracking-tighter uppercase text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,0.5)]">
-                    ILLEGAL STASH
-                  </h1>
-                  <button onClick={() => setStage('GRIND')} className="px-8 py-4 border-2 border-red-600 font-bold text-red-600 hover:bg-red-600 hover:text-black transition-colors uppercase tracking-widest">
-                    Spark It
-                  </button>
-                </motion.div>
-              )}
+          <div className="flex flex-wrap gap-2 mb-8">
+            {inventory.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => useItem(item)}
+                className="text-xs border border-zinc-700 px-3 py-2 hover:border-red-600"
+              >
+                {item.name}
+              </button>
+            ))}
+          </div>
 
-              {/* STAGE: GRIND */}
-              {stage === 'GRIND' && (
-                <motion.div key="grind" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="flex flex-col items-center w-full max-w-md px-6 z-10">
-                  <h2 className="text-3xl font-bold mb-12 text-red-600 uppercase tracking-widest">1. Crush</h2>
-                  <div className="w-full h-8 border-2 border-red-900 mb-8 relative">
-                    <motion.div className="h-full bg-red-600" initial={{ width: '0%' }} animate={{ width: `${grindProgress}%` }} />
-                  </div>
-                  <button onPointerDown={handleGrind} className="w-48 h-48 rounded-full border-4 border-red-600 flex items-center justify-center text-xl font-bold text-red-600 uppercase active:bg-red-900 transition-colors select-none">
-                    Mash
-                  </button>
-                </motion.div>
-              )}
+          <div className="text-xs text-zinc-500 space-y-1 h-24 overflow-hidden">
+            {log.map((l, i) => (
+              <div key={i}>{l}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-              {/* STAGE: PAPER */}
-              {stage === 'PAPER' && (
-                <motion.div key="paper" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center w-full max-w-md px-6 z-10">
-                  <h2 className="text-3xl font-bold mb-12 text-red-600 uppercase tracking-widest text-center">2. Wrap</h2>
-                  <div className="w-full h-32 border-2 border-dashed border-red-900 relative flex items-center justify-center mb-12">
-                    <div className="w-16 h-full bg-red-900/20 absolute"></div>
-                    <motion.div
-                      drag="x" dragConstraints={{ left: -150, right: 150 }} dragElastic={0.2}
-                      onDragEnd={(e, info) => { if (Math.abs(info.offset.x) < 20) { triggerShake(); setStage('FILL'); } }}
-                      className="w-24 h-24 bg-amber-900/80 backdrop-blur-sm cursor-grab active:cursor-grabbing border-2 border-amber-700 z-20"
-                    />
-                  </div>
-                </motion.div>
-              )}
-
-              {/* STAGE: FILL */}
-              {stage === 'FILL' && (
-                <motion.div key="fill" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center w-full max-w-md px-6 z-10">
-                  <h2 className="text-3xl font-bold mb-12 text-red-600 uppercase tracking-widest text-center">3. Pack It</h2>
-                  <div className="w-full h-12 border-2 border-red-900 relative mb-12">
-                    <div className="absolute left-[40%] right-[40%] h-full bg-green-900/40 border-x border-green-500"></div>
-                    <div className="absolute top-[-8px] bottom-[-8px] w-4 bg-red-500 shadow-[0_0_10px_rgba(220,38,38,1)]" style={{ left: `calc(${fillPos}% - 8px)` }}></div>
-                  </div>
-                  <button onClick={handleFillTap} className="px-12 py-6 border-2 border-red-600 text-xl text-red-600 font-bold hover:bg-red-600 hover:text-black transition-colors uppercase">
-                    Lock In
-                  </button>
-                </motion.div>
-              )}
-
-              {/* STAGE: ROLL */}
-              {stage === 'ROLL' && (
-                <motion.div key="roll" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col items-center w-full max-w-md px-6 z-10">
-                  <h2 className="text-3xl font-bold mb-12 text-red-600 uppercase tracking-widest text-center">4. Roll & Lick</h2>
-                  <div className="w-full h-64 border-2 border-red-900/50 flex flex-col justify-end items-center pb-4 relative overflow-hidden">
-                    <motion.div
-                      drag="y" dragConstraints={{ top: -200, bottom: 0 }} dragElastic={0.1}
-                      onDragEnd={(e, info) => { if (info.offset.y < -150) { triggerShake(); setStage('SUCCESS'); } }}
-                      className="w-48 h-12 bg-amber-800 cursor-grab active:cursor-grabbing shadow-[0_0_20px_rgba(180,83,9,0.6)]"
-                    />
-                  </div>
-                </motion.div>
-              )}
-
-              {/* STAGE: SUCCESS */}
-              {stage === 'SUCCESS' && (
-                <motion.div key="success" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black">
-                  <video src="/smoking-loop.mp4" autoPlay loop playsInline muted className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                  <div className="relative z-30 flex flex-col items-center">
-                    <motion.h1 initial={{ scale: 2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-6xl font-black text-red-500 mb-12 uppercase tracking-tighter drop-shadow-2xl">
-                      SESSION ACTIVE
-                    </motion.h1>
-                    <button onClick={() => { setGrindProgress(0); setStage('HIDDEN'); }} className="px-8 py-4 border-2 border-red-600 text-red-600 font-bold bg-black/50 hover:bg-red-600 hover:text-black uppercase">
-                      Put Out
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* --- GLOBAL CSS FOR SHAKE ANIMATION --- */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-5px) rotate(-1deg); }
-          50% { transform: translateX(5px) rotate(1deg); }
-          75% { transform: translateX(-5px) rotate(-1deg); }
-        }
-        .animate-shake { animation: shake 0.2s cubic-bezier(.36,.07,.19,.97) both; }
-      `}} />
+  // Game end
+  return (
+    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center relative">
+      <button
+        onClick={exitGame}
+        className="absolute top-6 left-6 text-xs tracking-widest uppercase hover:text-red-500"
+      >
+        ← Back to Session
+      </button>
+      <h2 className="text-4xl font-black tracking-tighter mb-4">SESSION OVER</h2>
+      <p className="text-zinc-500 text-sm mb-10 tracking-widest">Night continues...</p>
+      <button
+        onClick={startGame}
+        className="px-8 py-3 border border-white/30 text-xs tracking-[0.25em] uppercase hover:border-red-600 hover:text-red-500"
+      >
+        Run It Back
+      </button>
     </div>
   );
 }
