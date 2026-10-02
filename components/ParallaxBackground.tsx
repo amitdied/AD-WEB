@@ -36,9 +36,23 @@ export function ParallaxBackground() {
 
   return (
     <div ref={containerRef} className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
-      <div className="parallax-layer absolute top-[-10%] left-[-10%] w-[120%] h-[120%] opacity-20 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-900/40 via-black to-black" />
-      <div className="parallax-layer absolute top-[20%] right-[10%] w-[30vw] h-[30vw] bg-red-800/10 rounded-full blur-[120px]" />
-      <div className="parallax-layer absolute top-[60%] left-[5%] w-[40vw] h-[40vw] bg-blue-900/10 rounded-full blur-[140px]" />
+      {/* Element 1: Radial Glow reacting to Bass (subtle 1.00-1.025 scale) and Overall Energy (opacity) */}
+      <div
+        className="parallax-layer absolute top-[-10%] left-[-10%] w-[120%] h-[120%] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-900/40 via-black to-black transition-[transform,opacity] duration-100 ease-out"
+        style={{
+          transform: "scale(var(--audio-bass-scale, 1))",
+          opacity: "var(--audio-glow-opacity, 0.20)",
+        }}
+      />
+      {/* Element 2: Ambient blur orbs reacting to Mid and Overall Energy */}
+      <div
+        className="parallax-layer absolute top-[20%] right-[10%] w-[30vw] h-[30vw] bg-red-800/10 rounded-full blur-[120px] transition-opacity duration-150 ease-out"
+        style={{ opacity: "var(--audio-orb-opacity, 0.30)" }}
+      />
+      <div
+        className="parallax-layer absolute top-[60%] left-[5%] w-[40vw] h-[40vw] bg-blue-900/10 rounded-full blur-[140px] transition-opacity duration-150 ease-out"
+        style={{ opacity: "var(--audio-orb-opacity, 0.30)" }}
+      />
       
       {/* Particles/Dust */}
       {Array.from({ length: 20 }).map((_, i) => (

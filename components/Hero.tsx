@@ -42,7 +42,11 @@ export function Hero() {
           transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
           className="absolute top-1/4 -left-1/4 w-[800px] h-[800px] bg-red-950/30 rounded-full blur-[150px]"
         />
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.15] mix-blend-overlay pointer-events-none"></div>
+        {/* Element 4: Ambient Noise/Grain overlay reacting subtly to High Frequencies */}
+        <div
+          className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay pointer-events-none transition-opacity duration-150 ease-out"
+          style={{ opacity: "var(--audio-grain-opacity, 0.15)" }}
+        />
       </motion.div>
 
       {/* Main Content */}

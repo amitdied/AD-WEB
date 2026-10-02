@@ -7,6 +7,7 @@ import React, {
   useRef,
   useEffect,
 } from "react";
+import { useAudioReactiveSystem } from "./audio-visualizer";
 
 type Track = {
   id: string;
@@ -35,6 +36,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fixingDurationRef = useRef(false);
+
+  // Audio-reactive visual system connected to the existing audio element
+  useAudioReactiveSystem(audioRef, isPlaying);
 
   useEffect(() => {
     const audio = new Audio();

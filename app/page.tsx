@@ -26,8 +26,11 @@ function AppContent() {
       
       <main className={`min-h-screen pb-24 selection:bg-red-500/30 transition-opacity duration-1000 ${isBooted ? 'opacity-100' : 'opacity-0 h-screen overflow-hidden'}`}>
         <ParallaxBackground />
-        {/* Global CRT scanline overlay */}
-        <div className="pointer-events-none fixed inset-0 z-[100] h-full w-full bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] opacity-20 mix-blend-overlay"></div>
+        {/* Element 3: Global CRT scanline overlay reacting to Kick Transient and Highs */}
+        <div
+          className="pointer-events-none fixed inset-0 z-[100] h-full w-full bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] mix-blend-overlay transition-opacity duration-75 ease-out"
+          style={{ opacity: "var(--audio-crt-opacity, 0.20)" }}
+        />
         
         <Header />
         <Hero />
