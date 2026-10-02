@@ -880,16 +880,13 @@ export async function getCustomTransmissions(
 ): Promise<CctvItem[]> {
   try {
     const supabase = getSupabaseAdmin();
-    let q = supabase
-      .from("cctv_items")
-      .select("*")
-      .order("order_index", { ascending: true });
+    let q = supabase.from("cctv_items").select("*");
 
     if (!includeHidden) {
       q = q.eq("visible", true);
     }
 
-    const { data, error } = await q;
+    const { data, error } = await q.order("order_index", { ascending: true });
     if (error) {
       console.error("[getCustomTransmissions]", error.message);
       return [];

@@ -81,6 +81,58 @@ export const YOUTUBE_LINKS = [
   "https://www.youtube.com/watch?v=G9ZP70GjmHQ",
 ];
 
+export interface CCTVFeedItem {
+  id: string;
+  url: string;
+  label: string;
+  location: string;
+  captionTitle: string;
+  snippet: string;
+  status: string;
+  date: string;
+  type: "instagram" | "video";
+  visible?: boolean;
+}
+
+export const DEFAULT_CCTV_POSTS: CCTVFeedItem[] = [
+  {
+    id: "reel-tu-harak",
+    url: "https://www.instagram.com/amitdied/reel/DcHBlPJTFBB/",
+    label: "CAM_01",
+    location: "STUDIO_UNDERGROUND",
+    captionTitle: "TU HARAK",
+    snippet: "New transmission from @amitdied.",
+    status: "ONLINE",
+    date: "LATEST",
+    type: "instagram",
+    visible: true,
+  },
+  {
+    id: "post-1",
+    url: "https://www.instagram.com/p/DF7n4yqT3lE/",
+    label: "CAM_02",
+    location: "STUDIO_UNDERGROUND",
+    captionTitle: "AMITDIED // LATE_NIGHT_SESSION",
+    snippet: "Analog pedals and 808 saturation test straight from the rack console.",
+    status: "ONLINE",
+    date: "ARCHIVE",
+    type: "instagram",
+    visible: true,
+  },
+  {
+    id: "post-2",
+    url: "https://www.instagram.com/p/DFzL12oSo7G/",
+    label: "CAM_03",
+    location: "MASTERING_LAB",
+    captionTitle: "OFFICIAL_PLACEMENT_RELEASE",
+    snippet: "New production landed worldwide.",
+    status: "TRANSMITTING",
+    date: "RECENT",
+    type: "instagram",
+    visible: true,
+  },
+];
+
 export interface InstagramTransmission {
   id: string;
   camCode: string;
