@@ -317,40 +317,34 @@ export function InstagramTeaser() {
         }
 
         const mapped: AmitdiedInstagramPost[] = data
-          .filter((item: any) => item && item.visible !== false)
-          .map((item: any, i: number) => {
-            const url =
-              item.url || item.postUrl || item.youtubeUrl || item.imageUrl || "";
-            const isVideo =
-              item.type === "video" ||
-              /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) ||
-              (url && !String(url).includes("instagram.com") && !String(url).includes("instagram.com"));
+  .filter((item: any) => item && item.visible !== false)
+  .map((item: any, i: number) => {
+    const url =
+      item.url || item.postUrl || item.youtubeUrl || item.imageUrl || "";
 
-            const reallyVideo =
-              item.type === "video" ||
-              /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) ||
-              (url && !String(url).includes("instagram.com"));
+    const reallyVideo =
+      item.type === "video" ||
+      /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) ||
+      (typeof url === "string" && url.length > 0 && !url.includes("instagram.com"));
 
-            return {
-              id: String(item.id || `feed-${i}`),
-              url,
-              label:
-                item.label ||
-                item.camCode ||
-                `CAM_${String(i + 1).padStart(2, "0")}`,
-              location: item.location || "STUDIO_UNDERGROUND",
-              captionTitle:
-                item.title ||
-                item.captionTitle ||
-                item.videoSnippetTitle ||
-                "TRANSMISSION",
-              snippet: item.snippet || item.caption || "",
-              status: item.status || "ONLINE",
-              date: item.date || "LIVE",
-              type: reallyVideo ? "video" : "instagram",
-            };
-          })
-          .filter((p) => !!p.url);
+    const post: AmitdiedInstagramPost = {
+      id: String(item.id || `feed-${i}`),
+      url: String(url),
+      label: String(
+        item.label || item.camCode || `CAM_${String(i + 1).padStart(2, "0")}`
+      ),
+      location: String(item.location || "STUDIO_UNDERGROUND"),
+      captionTitle: String(
+        item.title || item.captionTitle || item.videoSnippetTitle || "TRANSMISSION"
+      ),
+      snippet: String(item.snippet || item.caption || ""),
+      status: String(item.status || "ONLINE"),
+      date: String(item.date || "LIVE"),
+      type: reallyVideo ? "video" : "instagram",
+    };
+    return post;
+  })
+  .filter((p) => !!p.url);
 
         if (mapped.length > 0) setPosts(mapped);
       } catch (err) {
