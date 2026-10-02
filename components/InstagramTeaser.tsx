@@ -10,12 +10,55 @@ import {
   ArrowUpRight,
   Terminal,
 } from "lucide-react";
-import { DEFAULT_CCTV_POSTS, type CCTVFeedItem } from "@/lib/data";
 
-export type AmitdiedInstagramPost = CCTVFeedItem;
+export interface AmitdiedInstagramPost {
+  id: string;
+  url: string;
+  label: string;
+  location: string;
+  captionTitle: string;
+  snippet: string;
+  status: string;
+  date: string;
+  type?: "instagram" | "video";
+}
 
-// Shared fallback posts if API is empty or offline
-export const AMITDIED_INSTAGRAM_POSTS: AmitdiedInstagramPost[] = DEFAULT_CCTV_POSTS;
+// Fallback posts if API is empty
+export const AMITDIED_INSTAGRAM_POSTS: AmitdiedInstagramPost[] = [
+  {
+    id: "reel-tu-harak",
+    url: "https://www.instagram.com/amitdied/reel/DcHBlPJTFBB/",
+    label: "CAM_01",
+    location: "STUDIO_UNDERGROUND",
+    captionTitle: "TU HARAK",
+    snippet: "New transmission from @amitdied.",
+    status: "ONLINE",
+    date: "LATEST",
+    type: "instagram",
+  },
+  {
+    id: "post-1",
+    url: "https://www.instagram.com/p/DF7n4yqT3lE/",
+    label: "CAM_02",
+    location: "STUDIO_UNDERGROUND",
+    captionTitle: "AMITDIED // LATE_NIGHT_SESSION",
+    snippet: "Analog pedals and 808 saturation test straight from the rack console.",
+    status: "ONLINE",
+    date: "ARCHIVE",
+    type: "instagram",
+  },
+  {
+    id: "post-2",
+    url: "https://www.instagram.com/p/DFzL12oSo7G/",
+    label: "CAM_03",
+    location: "MASTERING_LAB",
+    captionTitle: "OFFICIAL_PLACEMENT_RELEASE",
+    snippet: "New production landed worldwide.",
+    status: "TRANSMITTING",
+    date: "RECENT",
+    type: "instagram",
+  },
+];
 
 declare global {
   interface Window {
@@ -63,7 +106,7 @@ function CCTVMonitor({
       } catch {}
     }, 400);
     return () => clearTimeout(timer);
-  }, [isInView, post.type, post.url]);
+  }, [isInView, post.type]);
 
   return (
     <div
@@ -143,6 +186,7 @@ function CCTVMonitor({
                 <video
                   src={post.url}
                   controls
+                  controlsList="nodownload"
                   playsInline
                   className="w-full h-full max-h-[420px] object-contain bg-black"
                 />

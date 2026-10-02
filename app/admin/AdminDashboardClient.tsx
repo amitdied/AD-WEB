@@ -2166,6 +2166,7 @@ function TransmissionsManager() {
                       <video
                         src={tx.url}
                         controls
+                        controlsList="nodownload"
                         playsInline
                         preload="metadata"
                         className="w-full max-h-48 object-contain"
