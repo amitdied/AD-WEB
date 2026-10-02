@@ -1403,19 +1403,17 @@ function VideosManager() {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const [form, setForm] = useState({
-    url: "",
-    title: "",
-    description: "",
-  });
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [form, setForm] = useState({ url: "", title: "", description: "" });
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadVideos = useCallback(async () => {
     try {
       const data = await getCustomVideos(true);
-      setVideos(data);
-    } catch (err) {
+      setVideos(Array.isArray(data) ? data : []);
+    } catch (err: any) {
       console.error("Error loading portfolio videos:", err);
+      setActionError(err?.message || "Failed to load videos");
     } finally {
       setLoading(false);
     }
@@ -1433,8 +1431,9 @@ function VideosManager() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    setActionError(null);
     if (!form.url.trim()) {
-      alert("Please paste a YouTube URL");
+      setActionError("Please paste a YouTube URL");
       return;
     }
     setSaving(true);
@@ -1445,13 +1444,13 @@ function VideosManager() {
         description: form.description.trim() || undefined,
       });
       if (!res.ok) {
-        alert(res.error);
+        setActionError(res.error);
         return;
       }
       resetForm();
       await loadVideos();
     } catch (err: any) {
-      alert(err?.message || "Failed to add video");
+      setActionError(err?.message || "Failed to add video");
     } finally {
       setSaving(false);
     }
@@ -1460,6 +1459,7 @@ function VideosManager() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId) return;
+    setActionError(null);
     setSaving(true);
     try {
       const res = await updateVideo(editingId, {
@@ -1468,48 +1468,80 @@ function VideosManager() {
         description: form.description,
       });
       if (!res.ok) {
-        alert(res.error);
+        setActionError(res.error);
         return;
       }
       resetForm();
       await loadVideos();
     } catch (err: any) {
-      alert(err?.message || "Failed to update video");
+      setActionError(err?.message || "Failed to update video");
     } finally {
       setSaving(false);
     }
   };
 
   const handleToggleVisible = async (id: string, current: boolean) => {
+    setActionError(null);
+    setBusyId(id);
+
+    // Optimistic UI — instant change
+    const nextVisible = !current;
+    setVideos((prev) =>
+      prev.map((v) => (v.id === id ? { ...v, visible: nextVisible } : v))
+    );
+
     try {
-      const res = await toggleVideoVisibility(id, !current);
+      const res = await toggleVideoVisibility(id, nextVisible);
       if (!res.ok) {
-        alert(res.error);
+        // Revert on failure
+        setVideos((prev) =>
+          prev.map((v) => (v.id === id ? { ...v, visible: current } : v))
+        );
+        setActionError(res.error || "Hide/Show failed");
         return;
       }
+      // Confirm from server
       await loadVideos();
     } catch (err: any) {
-      alert(err?.message || "Failed to toggle visibility");
+      setVideos((prev) =>
+        prev.map((v) => (v.id === id ? { ...v, visible: current } : v))
+      );
+      setActionError(err?.message || "Hide/Show failed");
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this video from portfolio_items? This cannot be undone.")) return;
+    if (!confirm("Delete this video from portfolio? This cannot be undone.")) return;
+
+    setActionError(null);
+    setBusyId(id);
+
+    // Optimistic remove
+    const snapshot = videos;
+    setVideos((prev) => prev.filter((v) => v.id !== id));
+
     try {
       const res = await deleteVideo(id);
       if (!res.ok) {
-        alert(res.error);
+        setVideos(snapshot); // revert
+        setActionError(res.error || "Delete failed");
         return;
       }
       await loadVideos();
     } catch (err: any) {
-      alert(err?.message || "Failed to delete video");
+      setVideos(snapshot);
+      setActionError(err?.message || "Delete failed");
+    } finally {
+      setBusyId(null);
     }
   };
 
   const startEdit = (video: any) => {
     setEditingId(video.id);
     setIsAdding(false);
+    setActionError(null);
     setForm({
       url: video.url || video.youtubeUrl || "",
       title: video.title || "",
@@ -1517,9 +1549,17 @@ function VideosManager() {
     });
   };
 
+  const getYtId = (video: any) => {
+    if (video.youtubeId) return video.youtubeId;
+    const url = video.url || "";
+    const m = url.match(
+      /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
+    );
+    return m?.[1] || video.id;
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-800">
         <div>
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -1532,19 +1572,37 @@ function VideosManager() {
             Source: Supabase <code className="text-zinc-300">portfolio_items</code>
           </p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setIsAdding(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-red-600/20 border border-red-600/40 hover:bg-red-600/30 text-red-400 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Video
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setLoading(true);
+              loadVideos();
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 border border-zinc-700 text-zinc-400 hover:text-white text-xs uppercase tracking-wider rounded-lg"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
+          <button
+            onClick={() => {
+              resetForm();
+              setIsAdding(true);
+              setActionError(null);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600/20 border border-red-600/40 hover:bg-red-600/30 text-red-400 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Video
+          </button>
+        </div>
       </div>
 
-      {/* Add / Edit Form */}
+      {actionError && (
+        <div className="p-3 rounded-lg bg-red-950/50 border border-red-800 text-red-300 text-xs font-mono">
+          {actionError}
+        </div>
+      )}
+
       {(isAdding || editingId) && (
         <form
           onSubmit={editingId ? handleUpdate : handleAdd}
@@ -1594,24 +1652,28 @@ function VideosManager() {
         </form>
       )}
 
-      {/* List */}
       {loading ? (
         <div className="p-12 text-center text-zinc-500 font-mono text-xs animate-pulse">
           Loading portfolio_items...
         </div>
       ) : videos.length === 0 ? (
         <div className="p-12 text-center text-zinc-500 font-mono text-xs">
-          No videos in portfolio_items yet.
+          No videos found in portfolio_items.
         </div>
       ) : (
         <div className="space-y-3">
           {videos.map((video, index) => {
-            const ytId = video.youtubeId || extractYouTubeIdClient(video.url) || video.id;
+            const ytId = getYtId(video);
             const ytUrl = video.url || `https://www.youtube.com/watch?v=${ytId}`;
+            const isBusy = busyId === video.id;
             return (
               <div
                 key={video.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-colors"
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/60 p-4 rounded-xl border transition-colors ${
+                  video.visible === false
+                    ? "border-zinc-800 opacity-60"
+                    : "border-zinc-800/80 hover:border-zinc-700"
+                }`}
               >
                 <div className="flex items-center gap-4 min-w-0 flex-1">
                   <div className="relative w-24 h-16 rounded-lg overflow-hidden border border-zinc-800 flex-shrink-0 bg-black">
@@ -1633,7 +1695,7 @@ function VideosManager() {
                       <span className="text-[10px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 rounded font-mono">
                         {video.id}
                       </span>
-                      {!video.visible && (
+                      {video.visible === false && (
                         <span className="text-[10px] bg-zinc-800 text-zinc-500 border border-zinc-700 px-1.5 rounded font-mono">
                           HIDDEN
                         </span>
@@ -1653,22 +1715,29 @@ function VideosManager() {
 
                 <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
                   <button
-                    onClick={() => handleToggleVisible(video.id, video.visible)}
-                    className="p-2 border border-zinc-700 rounded hover:border-zinc-500 text-zinc-400 hover:text-white"
-                    title={video.visible ? "Hide" : "Show"}
+                    disabled={isBusy}
+                    onClick={() => handleToggleVisible(video.id, video.visible !== false)}
+                    className="p-2 border border-zinc-700 rounded hover:border-zinc-500 text-zinc-400 hover:text-white disabled:opacity-40"
+                    title={video.visible === false ? "Show" : "Hide"}
                   >
-                    {video.visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    {video.visible === false ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
                   </button>
                   <button
+                    disabled={isBusy}
                     onClick={() => startEdit(video)}
-                    className="p-2 border border-zinc-700 rounded hover:border-zinc-500 text-zinc-400 hover:text-white"
+                    className="p-2 border border-zinc-700 rounded hover:border-zinc-500 text-zinc-400 hover:text-white disabled:opacity-40"
                     title="Edit"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
+                    disabled={isBusy}
                     onClick={() => handleDelete(video.id)}
-                    className="p-2 border border-zinc-700 rounded hover:border-red-600 text-zinc-400 hover:text-red-400"
+                    className="p-2 border border-zinc-700 rounded hover:border-red-600 text-zinc-400 hover:text-red-400 disabled:opacity-40"
                     title="Delete"
                   >
                     <Trash2 className="w-4 h-4" />
