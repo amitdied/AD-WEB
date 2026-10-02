@@ -43,7 +43,7 @@ export function sanitizeStorageFilename(filename: string): string {
     .replace(/_+/g, '_');
 }
 
-export type StorageBucketType = 'audio' | 'covers';
+export type StorageBucketType = 'audio' | 'covers' | 'cctv';
 
 export interface SupabaseUploadResult {
   ok: boolean;

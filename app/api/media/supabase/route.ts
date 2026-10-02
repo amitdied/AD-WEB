@@ -16,9 +16,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    if (bucket !== 'audio' && bucket !== 'covers') {
+    if (bucket !== 'audio' && bucket !== 'covers' && bucket !== 'cctv') {
       return NextResponse.json(
-        { error: 'Invalid bucket. Only audio and covers are allowed.' },
+        { error: 'Invalid bucket. Only audio, covers, and cctv are allowed.' },
         { status: 400 }
       );
     }
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    if (bucket === 'audio') {
+    if (bucket === 'audio' || bucket === 'cctv') {
       const { data: signedData, error: signedError } = await supabase.storage
         .from(bucket)
         .createSignedUrl(decodedPath, 3600);
@@ -65,6 +65,12 @@ export async function GET(req: NextRequest) {
         ? lowerPath.endsWith('.wav')
           ? 'audio/wav'
           : 'audio/mpeg'
+        : bucket === 'cctv'
+          ? lowerPath.endsWith('.webm')
+            ? 'video/webm'
+            : lowerPath.endsWith('.mov')
+              ? 'video/quicktime'
+              : 'video/mp4'
         : lowerPath.endsWith('.png')
           ? 'image/png'
           : lowerPath.endsWith('.webp')

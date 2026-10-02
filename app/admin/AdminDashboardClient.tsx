@@ -1771,11 +1771,14 @@ function TransmissionsManager() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [addType, setAddType] = useState<"instagram" | "video">("instagram");
+  const [addType, setAddType] = useState<"instagram" | "video">("video");
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [videoUploadProgress, setVideoUploadProgress] = useState<number | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "uploaded" | "saving" | "saved" | "failed">("idle");
 
   const [form, setForm] = useState({
     url: "",
@@ -1811,6 +1814,8 @@ function TransmissionsManager() {
       status: "ONLINE",
     });
     setMediaFile(null);
+    setVideoUploadProgress(null);
+    setUploadStatus("idle");
     setIsAdding(false);
     setActionError(null);
   };
@@ -1818,35 +1823,52 @@ function TransmissionsManager() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionError(null);
+    setSuccessMessage(null);
     setSaving(true);
 
     try {
       let finalUrl = form.url.trim();
 
-      // Optional: upload custom video file to Drive MEDIA folder
+      // Custom video upload to Supabase Storage bucket 'cctv'
       if (addType === "video" && mediaFile) {
-        const fd = new FormData();
-        fd.append("file", mediaFile);
-        fd.append("folderType", "media");
-        const uploadRes = await uploadFile(fd, "media");
+        setUploadStatus("uploading");
+        setVideoUploadProgress(0);
+
+        const uniqueId =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        const storagePath = `cctv/${uniqueId}/video-${sanitizeStorageFilename(mediaFile.name)}`;
+
+        const uploadRes = await uploadToSupabaseStorage("cctv", storagePath, mediaFile, (pct) => {
+          setVideoUploadProgress(pct);
+        });
+
         if (!uploadRes.ok) {
-          setActionError(uploadRes.error);
+          setUploadStatus("failed");
+          setActionError(`Supabase Storage upload failed: ${uploadRes.error || "Unknown upload error"}`);
           setSaving(false);
           return;
         }
-        finalUrl = uploadRes.url;
+
+        setUploadStatus("uploaded");
+        setVideoUploadProgress(100);
+
+        // Safe URL for video streaming
+        finalUrl = `/api/media/supabase?bucket=cctv&path=${encodeURIComponent(storagePath)}`;
       }
 
       if (!finalUrl) {
-        setActionError("Paste a URL or upload a video file");
+        setActionError("Please select a video file to upload or enter a valid URL.");
         setSaving(false);
         return;
       }
 
+      setUploadStatus("saving");
       const res = await addTransmission({
         type: addType,
         url: finalUrl,
-        title: form.title.trim() || undefined,
+        title: form.title.trim() || (mediaFile ? mediaFile.name.replace(/\.[^/.]+$/, "") : undefined),
         label: form.label.trim() || undefined,
         location: form.location.trim() || undefined,
         snippet: form.snippet.trim() || undefined,
@@ -1854,14 +1876,20 @@ function TransmissionsManager() {
       });
 
       if (!res.ok) {
-        setActionError(res.error);
+        setUploadStatus("failed");
+        setActionError(`Failed to save CCTV metadata to cctv_items: ${res.error}`);
+        setSaving(false);
         return;
       }
 
+      setUploadStatus("saved");
+      setSuccessMessage("CCTV VIDEO SAVED SUCCESSFULLY");
+      setTimeout(() => setSuccessMessage(null), 6000);
       resetForm();
       await loadData();
     } catch (err: any) {
-      setActionError(err?.message || "Failed to add");
+      setUploadStatus("failed");
+      setActionError(err?.message || "Failed to add CCTV video");
     } finally {
       setSaving(false);
     }
@@ -1924,7 +1952,7 @@ function TransmissionsManager() {
             </span>
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Source: Supabase <code className="text-zinc-300">cctv_items</code> — Instagram + custom video
+            Source: Supabase <code className="text-zinc-300">cctv_items</code> & Storage bucket <code className="text-zinc-300">cctv</code>
           </p>
         </div>
         <button
@@ -1938,6 +1966,13 @@ function TransmissionsManager() {
           Add Feed
         </button>
       </div>
+
+      {successMessage && (
+        <div className="p-3 rounded-lg bg-emerald-950/50 border border-emerald-800 text-emerald-300 text-xs font-mono flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{successMessage}</span>
+        </div>
+      )}
 
       {actionError && (
         <div className="p-3 rounded-lg bg-red-950/50 border border-red-800 text-red-300 text-xs font-mono">
@@ -1953,6 +1988,17 @@ function TransmissionsManager() {
           <div className="flex gap-2">
             <button
               type="button"
+              onClick={() => setAddType("video")}
+              className={`px-3 py-2 rounded border text-[10px] uppercase tracking-wider ${
+                addType === "video"
+                  ? "border-red-600 text-red-400 bg-red-950/30"
+                  : "border-zinc-700 text-zinc-500"
+              }`}
+            >
+              Custom Video (Supabase Storage: cctv)
+            </button>
+            <button
+              type="button"
               onClick={() => setAddType("instagram")}
               className={`px-3 py-2 rounded border text-[10px] uppercase tracking-wider ${
                 addType === "instagram"
@@ -1962,20 +2008,52 @@ function TransmissionsManager() {
             >
               Instagram Link
             </button>
-            <button
-              type="button"
-              onClick={() => setAddType("video")}
-              className={`px-3 py-2 rounded border text-[10px] uppercase tracking-wider ${
-                addType === "video"
-                  ? "border-red-600 text-red-400 bg-red-950/30"
-                  : "border-zinc-700 text-zinc-500"
-              }`}
-            >
-              Custom Video
-            </button>
           </div>
 
-          {addType === "instagram" ? (
+          {addType === "video" ? (
+            <div className="space-y-3 p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl">
+              <label className="block text-zinc-300 font-semibold flex items-center justify-between">
+                <span>Select MP4 / Video File</span>
+                <span className="text-[10px] text-red-400 font-mono">→ SUPABASE BUCKET: cctv</span>
+              </label>
+              <input
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,video/*"
+                onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
+                className="w-full text-zinc-400 file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:bg-red-600/20 file:text-red-400 hover:file:bg-red-600/30 cursor-pointer"
+              />
+
+              {videoUploadProgress !== null && (
+                <div className="space-y-1.5 pt-2">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-zinc-400">
+                      {videoUploadProgress < 100
+                        ? `Uploading CCTV video... ${videoUploadProgress}%`
+                        : "CCTV VIDEO UPLOADED"}
+                    </span>
+                    <span className="text-white font-bold">{videoUploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-red-600 h-full transition-all duration-150"
+                      style={{ width: `${videoUploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-1">
+                <label className="block text-zinc-500 text-[10px] mb-1">Or Direct Video URL</label>
+                <input
+                  type="url"
+                  value={form.url}
+                  onChange={(e) => setForm({ ...form, url: e.target.value })}
+                  placeholder="https://... (optional if file selected above)"
+                  className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
+                />
+              </div>
+            </div>
+          ) : (
             <input
               type="url"
               value={form.url}
@@ -1984,22 +2062,6 @@ function TransmissionsManager() {
               className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
               required
             />
-          ) : (
-            <div className="space-y-2">
-              <input
-                type="url"
-                value={form.url}
-                onChange={(e) => setForm({ ...form, url: e.target.value })}
-                placeholder="Video URL (optional if uploading file)"
-                className="w-full bg-black border border-zinc-800 rounded px-3 py-2 text-white outline-none focus:border-red-600"
-              />
-              <input
-                type="file"
-                accept="video/*"
-                onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
-                className="w-full text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-800 file:text-zinc-200"
-              />
-            </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2047,7 +2109,13 @@ function TransmissionsManager() {
               disabled={saving}
               className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase tracking-wider rounded disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Add to CCTV"}
+              {saving
+                ? uploadStatus === "uploading"
+                  ? `Uploading ${videoUploadProgress ?? 0}%...`
+                  : uploadStatus === "uploaded"
+                    ? "CCTV VIDEO UPLOADED"
+                    : "Saving..."
+                : "Add to CCTV"}
             </button>
             <button
               type="button"
@@ -2092,6 +2160,19 @@ function TransmissionsManager() {
                   <div className="text-xs text-white font-bold mb-1 truncate">
                     {tx.title || "UNTITLED"}
                   </div>
+
+                  {tx.type === "video" && tx.url && (
+                    <div className="relative w-full max-h-48 bg-black rounded-lg overflow-hidden border border-zinc-800 my-2">
+                      <video
+                        src={tx.url}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full max-h-48 object-contain"
+                      />
+                    </div>
+                  )}
+
                   <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed mb-2">
                     {tx.snippet || tx.url}
                   </p>
