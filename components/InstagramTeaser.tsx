@@ -319,17 +319,18 @@ export function InstagramTeaser() {
         const mapped: AmitdiedInstagramPost[] = data
   .filter((item: any) => item && item.visible !== false)
   .map((item: any, i: number) => {
-    const url =
-      item.url || item.postUrl || item.youtubeUrl || item.imageUrl || "";
+    const url = String(
+      item.url || item.postUrl || item.youtubeUrl || item.imageUrl || ""
+    );
 
     const reallyVideo =
       item.type === "video" ||
       /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) ||
-      (typeof url === "string" && url.length > 0 && !url.includes("instagram.com"));
+      (url.length > 0 && !url.includes("instagram.com"));
 
-    const post: AmitdiedInstagramPost = {
+    const mappedPost: AmitdiedInstagramPost = {
       id: String(item.id || `feed-${i}`),
-      url: String(url),
+      url,
       label: String(
         item.label || item.camCode || `CAM_${String(i + 1).padStart(2, "0")}`
       ),
@@ -342,7 +343,7 @@ export function InstagramTeaser() {
       date: String(item.date || "LIVE"),
       type: reallyVideo ? "video" : "instagram",
     };
-    return post;
+    return mappedPost;
   })
   .filter((p) => !!p.url);
 
