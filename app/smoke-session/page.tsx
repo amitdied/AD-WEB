@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 
 type Character = {
   id: string;
@@ -117,7 +118,7 @@ export default function SmokeSessionPage() {
 
     const hero = party[activeHero];
     const target = livingEnemies[0];
-    let dmg = Math.max(5, hero.atk - target.def + Math.floor(Math.random() * 6));
+    let dmg = Math.max(5, hero.atk - target.def + ((hero.atk + target.def) % 6));
     if (focusActive) {
       dmg *= 2;
       setFocusActive(false);
@@ -164,7 +165,7 @@ export default function SmokeSessionPage() {
     }
 
     const target = party[targetIndex];
-    const dmg = Math.max(4, enemy.atk - target.def + Math.floor(Math.random() * 5));
+    const dmg = Math.max(4, enemy.atk - target.def + ((target.hp + enemy.atk) % 5));
     setParty((prev) =>
       prev.map((p, i) => (i === targetIndex ? { ...p, hp: Math.max(0, p.hp - dmg) } : p))
     );
@@ -179,7 +180,7 @@ export default function SmokeSessionPage() {
     } else if (hero.id === "chiku") {
       const target = enemies.find((e) => e.hp > 0);
       if (!target) return;
-      const dmg = 15 + Math.floor(Math.random() * 21);
+      const dmg = 15 + ((hero.speed + target.hp) % 21);
       setEnemies((prev) =>
         prev.map((e) => (e.id === target.id ? { ...e, hp: Math.max(0, e.hp - dmg) } : e))
       );
@@ -193,7 +194,7 @@ export default function SmokeSessionPage() {
     setTimeout(() => enemyTurn(enemies), 500);
   };
 
-  const useItem = (item: Item) => {
+  const consumeItem = (item: Item) => {
     if (item.effect === "heal") {
       setParty((prev) =>
         prev.map((p, i) =>
@@ -209,19 +210,19 @@ export default function SmokeSessionPage() {
   if (mode === "session") {
     return (
       <div className="min-h-screen bg-black text-white relative overflow-hidden flex flex-col items-center justify-center">
-        <a
+        <Link
           href="/"
           className="absolute top-6 left-6 text-sm tracking-widest uppercase hover:text-red-500 transition-colors z-50"
         >
           ← Back
-        </a>
+        </Link>
 
         {/* Hidden corner game entrance */}
         <button
           onClick={startGame}
           className="absolute bottom-6 right-6 text-[10px] tracking-[0.25em] uppercase text-zinc-600 hover:text-red-500 transition-colors z-50"
         >
-          // NIGHT
+          {"// NIGHT"}
         </button>
 
         <div className="relative flex flex-col items-center">
@@ -390,7 +391,7 @@ export default function SmokeSessionPage() {
             {inventory.map((item) => (
               <button
                 key={item.id}
-                onClick={() => useItem(item)}
+                onClick={() => consumeItem(item)}
                 className="text-xs border border-zinc-700 px-3 py-2 hover:border-red-600"
               >
                 {item.name}

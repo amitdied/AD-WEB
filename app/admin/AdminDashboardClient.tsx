@@ -1422,7 +1422,10 @@ function VideosManager() {
   }, []);
 
   useEffect(() => {
-    loadVideos();
+    const t = setTimeout(() => {
+      loadVideos();
+    }, 0);
+    return () => clearTimeout(t);
   }, [loadVideos]);
 
   const resetForm = () => {
@@ -1801,7 +1804,10 @@ function TransmissionsManager() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    const t = setTimeout(() => {
+      loadData();
+    }, 0);
+    return () => clearTimeout(t);
   }, [loadData]);
 
   const resetForm = () => {
