@@ -11,6 +11,7 @@ import { CCTVTerminal } from "./CCTVTerminal";
 import { CinemaTerminal, type PortfolioVideo } from "./CinemaTerminal";
 import { Node04Terminal } from "./Node04Terminal";
 import { WorldMinimap } from "./WorldMinimap";
+import { FriendNPCData } from "./NPCSystem";
 import {
   ARTIFACT_MESSAGES,
   SECRET_MESSAGES,
@@ -60,9 +61,12 @@ export function WorldMode({
   const [isCctvTerminalOpen, setIsCctvTerminalOpen] = useState(false);
   const [isCinemaTerminalOpen, setIsCinemaTerminalOpen] = useState(false);
   const [selectedCinemaProject, setSelectedCinemaProject] = useState<PortfolioVideo | null>(null);
+  const [cameraMode, setCameraMode] = useState<"FPP" | "TPP">("FPP");
   const [playerPos, setPlayerPos] = useState<[number, number, number]>([0, 1.65, 2.5]);
   const [playerYaw, setPlayerYaw] = useState<number>(0);
   const [teleportTarget, setTeleportTarget] = useState<[number, number, number] | null>(null);
+  const [nearbyFriend, setNearbyFriend] = useState<FriendNPCData | null>(null);
+  const [friendDialogue, setFriendDialogue] = useState<{ friend: FriendNPCData; lineIndex: number } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() =>
     typeof window !== "undefined"
@@ -73,6 +77,10 @@ export function WorldMode({
   const totalCollectibles = REQUIRED_ARTIFACTS_COUNT; // 8 collectibles
   const totalSecrets = TOTAL_SECRETS_COUNT; // 4 secrets
   const isNode04Unlocked = checkNode04Unlocked(discoveredArtifactIds, discoveredSecretIds);
+
+  const toggleCameraMode = useCallback(() => {
+    setCameraMode((prev) => (prev === "FPP" ? "TPP" : "FPP"));
+  }, []);
 
   const handlePlayerPositionChange = useCallback(
     (pos: [number, number, number], yaw: number) => {
@@ -133,16 +141,55 @@ export function WorldMode({
     };
   }, []);
 
-  // Handle Escape key to exit World Mode
+  // Handle Escape & Space keys for Dialogue and Exit
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        if (friendDialogue) {
+          e.preventDefault();
+          if (friendDialogue.lineIndex < friendDialogue.friend.dialogue.length - 1) {
+            setFriendDialogue((prev) => (prev ? { ...prev, lineIndex: prev.lineIndex + 1 } : null));
+          } else {
+            setFriendDialogue(null);
+          }
+          return;
+        } else if (
+          nearbyFriend &&
+          !isBeatArchiveOpen &&
+          !isCctvTerminalOpen &&
+          !isCinemaTerminalOpen &&
+          !isNode04TerminalOpen
+        ) {
+          e.preventDefault();
+          if (document.pointerLockElement) {
+            document.exitPointerLock?.();
+          }
+          setFriendDialogue({ friend: nearbyFriend, lineIndex: 0 });
+          return;
+        }
+      }
+
       if (e.key === "Escape" && stage === "open") {
+        if (friendDialogue) {
+          e.preventDefault();
+          setFriendDialogue(null);
+          return;
+        }
         onExit();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [stage, onExit]);
+  }, [
+    stage,
+    onExit,
+    friendDialogue,
+    nearbyFriend,
+    isBeatArchiveOpen,
+    isCctvTerminalOpen,
+    isCinemaTerminalOpen,
+    isNode04TerminalOpen,
+  ]);
 
   // Transition from "entering" to "open" and status progression
   useEffect(() => {
@@ -228,6 +275,17 @@ export function WorldMode({
           );
           return;
         }
+      }
+
+      if (item.id === "FACILITY_EXIT") {
+        setTeleportTarget([0, 1.65, 25.5]);
+        setActiveMessage("SURFACE ACCESS // ASCENDING TO AMITDIED OUTDOOR DISTRICT...");
+        return;
+      }
+      if (item.id === "FACILITY_ENTRANCE") {
+        setTeleportTarget([0, 1.65, 7.8]);
+        setActiveMessage("SECURITY AIRLOCK // DESCENDING TO UNDERGROUND FACILITY LEVEL -2...");
+        return;
       }
 
       // Collectible Music Artifacts
@@ -360,6 +418,10 @@ export function WorldMode({
           onPlayerPositionChange={handlePlayerPositionChange}
           teleportTarget={teleportTarget}
           onTeleportHandled={handleTeleportHandled}
+          cameraMode={cameraMode}
+          onCameraModeChange={setCameraMode}
+          onZoneTransition={(zone) => setActiveMessage(zone)}
+          onNearbyFriendChange={setNearbyFriend}
         />
       )}
 
@@ -471,6 +533,86 @@ export function WorldMode({
             )}
           </AnimatePresence>
 
+          {/* PROXIMITY FRIEND TALK PROMPT */}
+          {nearbyFriend && !friendDialogue && (
+            <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-zinc-950/90 border border-amber-500/60 px-4 py-2 rounded-lg text-amber-400 font-mono text-xs shadow-[0_0_20px_rgba(245,158,11,0.2)] animate-pulse pointer-events-auto">
+              <span className="font-bold tracking-widest">{nearbyFriend.name}</span>
+              <span className="text-zinc-600">•</span>
+              <button
+                onClick={() => {
+                  if (document.pointerLockElement) {
+                    document.exitPointerLock?.();
+                  }
+                  setFriendDialogue({ friend: nearbyFriend, lineIndex: 0 });
+                }}
+                className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 rounded font-bold cursor-pointer"
+              >
+                <kbd className="bg-amber-900/60 px-1 py-0.2 rounded text-[10px]">SPACE</kbd>
+                <span>TALK</span>
+              </button>
+            </div>
+          )}
+
+          {/* FRIEND NPC DIALOGUE OVERLAY */}
+          <AnimatePresence>
+            {friendDialogue && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                transition={{ duration: 0.18 }}
+                className="fixed inset-x-0 bottom-24 z-50 max-w-xl mx-auto px-4 pointer-events-auto"
+              >
+                <div className="bg-zinc-950/95 border-2 border-amber-500/80 rounded-lg p-5 shadow-[0_0_30px_rgba(245,158,11,0.25)] backdrop-blur-md">
+                  <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                      <span className="text-amber-400 font-bold text-sm tracking-widest font-mono">
+                        {friendDialogue.friend.name}
+                      </span>
+                      <span className="text-zinc-500 text-xs font-mono">• AMITDIED OUTDOOR</span>
+                    </div>
+                    <button
+                      onClick={() => setFriendDialogue(null)}
+                      className="text-zinc-500 hover:text-zinc-300 text-xs font-mono cursor-pointer"
+                    >
+                      [ESC]
+                    </button>
+                  </div>
+
+                  <p className="py-4 text-zinc-100 font-mono text-sm leading-relaxed tracking-wide min-h-[60px]">
+                    &quot;{friendDialogue.friend.dialogue[friendDialogue.lineIndex]}&quot;
+                  </p>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-zinc-900 text-xs text-zinc-400 font-mono">
+                    <span className="text-zinc-500 text-[10px]">
+                      {friendDialogue.lineIndex + 1} / {friendDialogue.friend.dialogue.length}
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (friendDialogue.lineIndex < friendDialogue.friend.dialogue.length - 1) {
+                          setFriendDialogue({
+                            ...friendDialogue,
+                            lineIndex: friendDialogue.lineIndex + 1,
+                          });
+                        } else {
+                          setFriendDialogue(null);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 rounded text-xs font-bold tracking-wider cursor-pointer transition-colors"
+                    >
+                      <span>
+                        {friendDialogue.lineIndex < friendDialogue.friend.dialogue.length - 1
+                          ? "NEXT [SPACE]"
+                          : "CLOSE [SPACE]"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* In-World Interactive Minimap Widget & Expanded Schematic */}
           <WorldMinimap
             playerPos={playerPos}
@@ -530,6 +672,16 @@ export function WorldMode({
                 {isNode04Unlocked ? "GRANTED" : "LOCKED"}
               </span>
             </div>
+
+            {/* Camera View Mode Badge (FPP ↔ TPP) */}
+            <button
+              onClick={toggleCameraMode}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 bg-zinc-950/90 hover:bg-red-950/40 border border-zinc-700/80 hover:border-red-500/80 rounded text-[10px] tracking-[0.2em] text-zinc-300 transition-colors cursor-pointer shadow-sm"
+              title="Toggle First Person / Third Person View [V]"
+            >
+              <span className="text-zinc-500">CAM:</span>
+              <span className="text-red-400 font-bold">{cameraMode}</span>
+            </button>
           </div>
         </div>
 
@@ -585,6 +737,12 @@ export function WorldMode({
               SPACE
             </kbd>
             <span>/ INTERACT</span>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-300">
+            <kbd className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-[9px] text-zinc-200 font-bold">
+              V
+            </kbd>
+            <span>/ CAM ({cameraMode})</span>
           </div>
           <div className="flex items-center gap-2 text-red-400/90 font-bold">
             <kbd className="px-1.5 py-0.5 bg-red-950 border border-red-800 rounded text-[9px] text-red-300 font-bold">

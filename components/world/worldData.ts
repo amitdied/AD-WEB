@@ -20,7 +20,7 @@ export interface WorldInteractable {
   label: string;
   actionText: string;
   message: string;
-  room: "MAIN STUDIO" | "BEAT ROOM" | "CCTV ROOM" | "CINEMA" | "ARCHIVE";
+  room: "MAIN STUDIO" | "BEAT ROOM" | "CCTV ROOM" | "CINEMA" | "ARCHIVE" | "OUTSIDE";
   position: [number, number, number];
   radius: number;
   isCollectible?: boolean;
@@ -248,6 +248,84 @@ export const WORLD_EQUIPMENT_INTERACTABLES: WorldInteractable[] = [
     position: [0, 1.0, -39.0],
     radius: 2.4,
   },
+
+  // 7. FACILITY EXIT TO SURFACE (SOUTH CORRIDOR)
+  {
+    id: "FACILITY_EXIT",
+    type: "door",
+    name: "SURFACE EXIT // PORTAL",
+    label: "EXIT // OUTSIDE",
+    actionText: "GO OUTSIDE",
+    message: "SURFACE ACCESS PORTAL // ASCENDING TO AMITDIED OUTDOOR DISTRICT...",
+    room: "MAIN STUDIO",
+    position: [0, 1.4, 8.4],
+    radius: 2.5,
+  },
+
+  // 8. OUTDOOR WORLD ENTRANCE (BUNKER)
+  {
+    id: "FACILITY_ENTRANCE",
+    type: "door",
+    name: "FACILITY ENTRANCE // BUNKER",
+    label: "ENTER // FACILITY",
+    actionText: "ENTER FACILITY",
+    message: "SECURITY AIRLOCK // DESCENDING TO UNDERGROUND FACILITY LEVEL -2...",
+    room: "OUTSIDE",
+    position: [0, 1.4, 23.5],
+    radius: 2.5,
+  },
+
+  // 9. OUTDOOR CENTRAL PARK MONUMENT
+  {
+    id: "OUTDOOR_MONUMENT",
+    type: "terminal",
+    name: "AMITDIED ACOUSTIC MONUMENT",
+    label: "SOUND MONUMENT",
+    actionText: "EXAMINE",
+    message: "ACOUSTIC MONUMENT // 'THE FREQUENCY OF WHAT REMAINS — RESONATING ACROSS THE PARK'",
+    room: "OUTSIDE",
+    position: [0, 1.2, 55.0],
+    radius: 2.8,
+  },
+
+  // 10. OUTDOOR PARK BENCH
+  {
+    id: "OUTDOOR_BENCH",
+    type: "console",
+    name: "PARK OVERLOOK BENCH",
+    label: "WOODEN BENCH",
+    actionText: "REST",
+    message: "CENTRAL PARK // BIRDS CHIRPING UNDER THE AMITDIED SKY",
+    room: "OUTSIDE",
+    position: [-10.5, 0.7, 52.0],
+    radius: 2.0,
+  },
+
+  // 11. OUTDOOR SOUND LABS & RECORD SHOP
+  {
+    id: "OUTDOOR_RECORD_SHOP",
+    type: "terminal",
+    name: "AMITDIED AUDIO LABS & VINYL",
+    label: "SOUND LABS",
+    actionText: "INSPECT",
+    message: "AMITDIED SOUND LABS // 24/7 ANALOG CUTTING ROOM & CREATIVE HUB",
+    room: "OUTSIDE",
+    position: [38.0, 1.4, 48.0],
+    radius: 3.0,
+  },
+
+  // 12. OUTDOOR SCENIC OVERLOOK
+  {
+    id: "OUTDOOR_OVERLOOK",
+    type: "terminal",
+    name: "SCENIC RIDGE OVERLOOK",
+    label: "TELESCOPE",
+    actionText: "LOOK",
+    message: "DISTANT SKYLINE // MOUNTAIN HORIZON ILLUMINATED BY SUNLIGHT",
+    room: "OUTSIDE",
+    position: [0, 1.4, 102.0],
+    radius: 2.5,
+  },
 ];
 
 // Environmental Secrets Registry (4 hidden discoveries across the facility)
@@ -335,10 +413,26 @@ export const WALKABLE_BOUNDS: BoundingBox2D[] = [
   { minX: -3.8, maxX: 3.8, minZ: -34.0, maxZ: -25.4, name: "Archive Area" },
   // 6. Node 04 Secret Chamber (Unlocked Vault)
   { minX: -3.6, maxX: 3.6, minZ: -41.5, maxZ: -34.0, name: "Node 04 Chamber" },
+
+  // South Exit Corridor (to Outside Portal)
+  { minX: -1.8, maxX: 1.8, minZ: 4.8, maxZ: 9.8, name: "Facility Exit Corridor" },
+
+  // --- OUTDOOR WORLD ZONES ---
+  // Outdoor Bunker Courtyard & Access Road
+  { minX: -24.0, maxX: 24.0, minZ: 21.0, maxZ: 36.0, name: "Facility Entrance" },
+  // Central Park & Sculpture Plaza
+  { minX: -32.0, maxX: 32.0, minZ: 36.0, maxZ: 78.0, name: "Central Park" },
+  // Residential Street & Houses Area (West)
+  { minX: -58.0, maxX: -28.0, minZ: 36.0, maxZ: 78.0, name: "Residential District" },
+  // Commercial & Sound District (East)
+  { minX: 28.0, maxX: 58.0, minZ: 36.0, maxZ: 78.0, name: "Commercial District" },
+  // Northern Scenic Overlook & Hillside
+  { minX: -58.0, maxX: 58.0, minZ: 78.0, maxZ: 115.0, name: "Scenic Overlook" },
 ];
 
 // Solid Obstacles (Player cannot walk through these)
 export const OBSTACLE_BOUNDS: BoundingBox2D[] = [
+  // Underground Obstacles
   // Main Studio Mixing Desk
   { minX: -1.8, maxX: 1.8, minZ: -3.4, maxZ: -1.4, name: "Studio Desk" },
   // Beat Room Central Sampler Table
@@ -353,6 +447,23 @@ export const OBSTACLE_BOUNDS: BoundingBox2D[] = [
   { minX: -3.4, maxX: -1.8, minZ: -29.2, maxZ: -27.0, name: "Archive Storage" },
   // Node 04 Mainframe Desk
   { minX: -1.6, maxX: 1.6, minZ: -40.5, maxZ: -38.5, name: "Node 04 Desk" },
+
+  // --- OUTDOOR SOLID OBSTACLES ---
+  // Bunker Left & Right Outer Walls
+  { minX: -6.0, maxX: -1.6, minZ: 21.0, maxZ: 25.5, name: "Bunker Left Wing" },
+  { minX: 1.6, maxX: 6.0, minZ: 21.0, maxZ: 25.5, name: "Bunker Right Wing" },
+
+  // Residential Houses (West)
+  { minX: -54.0, maxX: -38.0, minZ: 38.0, maxZ: 48.0, name: "House 01" },
+  { minX: -54.0, maxX: -38.0, minZ: 52.0, maxZ: 62.0, name: "House 02" },
+  { minX: -54.0, maxX: -38.0, minZ: 66.0, maxZ: 76.0, name: "House 03" },
+
+  // Commercial Buildings (East)
+  { minX: 38.0, maxX: 54.0, minZ: 40.0, maxZ: 54.0, name: "Audio Labs Building" },
+  { minX: 38.0, maxX: 54.0, minZ: 60.0, maxZ: 74.0, name: "Cinema Lounge Building" },
+
+  // Central Monument Base
+  { minX: -2.4, maxX: 2.4, minZ: 53.5, maxZ: 56.5, name: "Park Monument Base" },
 ];
 
 export interface SafeSpawnPoint {
@@ -401,6 +512,12 @@ export const SAFE_SPAWN_POINTS: SafeSpawnPoint[] = [
     coordinates: [0, 1.65, -38.0],
     description: "CLASSIFIED • SECRET ARCHIVAL VAULT",
     requiresNode04: true,
+  },
+  {
+    id: "SPAWN_OUTSIDE",
+    roomName: "OUTDOOR PARK",
+    coordinates: [0, 1.65, 36.0],
+    description: "SURFACE LEVEL • CENTRAL PARK & OUTDOOR DISTRICT",
   },
 ];
 
