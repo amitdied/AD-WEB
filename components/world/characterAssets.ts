@@ -16,6 +16,11 @@ export interface CharacterAssetDefinition {
   hasHeadphones?: boolean;
   hasCap?: boolean;
   hasBeanie?: boolean;
+  hasBeard?: boolean;
+  hasShortHair?: boolean;
+  hasJacket?: boolean;
+  hasBag?: boolean;
+  hasGamingSet?: boolean;
   heightScale?: number;
   rootRotationY?: number; // Model root orientation adjustment angle in radians
 }
@@ -25,9 +30,9 @@ export const CHARACTER_ASSET_REGISTRY: Record<string, CharacterAssetDefinition> 
     id: "PLAYER_AMITDIED",
     name: "AMITDIED",
     modelUrl: "/models/characters/player_amitdied.glb",
-    colorShirt: "#0b0f19",
+    colorShirt: "#09090b",
     colorPants: "#0f172a",
-    colorShoes: "#ef4444",
+    colorShoes: "#dc2626",
     colorSkin: "#334155",
     shirtGraphicColor: "#ef4444",
     hasHeadphones: true,
@@ -39,12 +44,13 @@ export const CHARACTER_ASSET_REGISTRY: Record<string, CharacterAssetDefinition> 
     id: "FRIEND_SAHIL",
     name: "SAHIL",
     modelUrl: "/models/characters/sahil.glb",
-    colorShirt: "#09090b",
-    colorPants: "#18181b",
+    colorShirt: "#d97706",
+    colorPants: "#27272a",
     colorShoes: "#f8fafc",
     colorSkin: "#334155",
-    shirtGraphicColor: "#f59e0b",
+    shirtGraphicColor: "#fef08a",
     hasCap: true,
+    hasBag: true,
     heightScale: 1.02,
     rootRotationY: 0,
   },
@@ -52,11 +58,13 @@ export const CHARACTER_ASSET_REGISTRY: Record<string, CharacterAssetDefinition> 
     id: "FRIEND_CHIKU",
     name: "CHIKU",
     modelUrl: "/models/characters/chiku.glb",
-    colorShirt: "#0d9488",
+    colorShirt: "#0f766e",
     colorPants: "#1e1b4b",
-    colorShoes: "#cbd5e1",
+    colorShoes: "#38bdf8",
     colorSkin: "#334155",
-    shirtGraphicColor: "#5eead4",
+    shirtGraphicColor: "#2dd4bf",
+    hasHeadphones: true,
+    hasGamingSet: true,
     heightScale: 0.98,
     rootRotationY: 0,
   },
@@ -64,13 +72,15 @@ export const CHARACTER_ASSET_REGISTRY: Record<string, CharacterAssetDefinition> 
     id: "FRIEND_ADDY",
     name: "ADDY",
     modelUrl: "/models/characters/addy.glb",
-    colorShirt: "#4c1d95",
+    colorShirt: "#18181b",
     colorPants: "#09090b",
-    colorShoes: "#06b6d4",
+    colorShoes: "#0891b2",
     colorSkin: "#334155",
-    shirtGraphicColor: "#c084fc",
-    hasHeadphones: true,
-    heightScale: 1.01,
+    shirtGraphicColor: "#a855f7",
+    hasJacket: true,
+    hasBeard: true,
+    hasShortHair: true,
+    heightScale: 1.05,
     rootRotationY: 0,
   },
 };

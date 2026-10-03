@@ -14,6 +14,11 @@ export interface NPCCharacterProps {
   hasHeadphones?: boolean;
   hasCap?: boolean;
   hasBeanie?: boolean;
+  hasBeard?: boolean;
+  hasShortHair?: boolean;
+  hasJacket?: boolean;
+  hasBag?: boolean;
+  hasGamingSet?: boolean;
   isFriend?: boolean;
   name?: string;
   activityState?: HumanoidActivityState;

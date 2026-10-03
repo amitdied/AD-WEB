@@ -23,6 +23,13 @@ export interface NPCData {
   shirtGraphicColor?: string;
   hasHeadphones?: boolean;
   hasCap?: boolean;
+  hasBeanie?: boolean;
+  hasBeard?: boolean;
+  hasShortHair?: boolean;
+  hasJacket?: boolean;
+  hasBag?: boolean;
+  hasGamingSet?: boolean;
+  heightScale?: number;
   modelUrl?: string;
   waypoints: [number, number, number][];
   speed: number;
@@ -36,12 +43,14 @@ export const FRIENDS_LIST: NPCData[] = [
     name: "SAHIL",
     isFriend: true,
     modelUrl: "/models/characters/sahil.glb",
-    colorShirt: "#09090b",
-    colorPants: "#18181b",
+    colorShirt: "#d97706",
+    colorPants: "#27272a",
     colorShoes: "#f8fafc",
     colorSkin: "#334155",
-    shirtGraphicColor: "#f59e0b",
+    shirtGraphicColor: "#fef08a",
     hasCap: true,
+    hasBag: true,
+    heightScale: 1.02,
     waypoints: [
       [-10.0, 1.65, 48.0],
       [-2.0, 1.65, 50.0],
@@ -61,11 +70,14 @@ export const FRIENDS_LIST: NPCData[] = [
     name: "CHIKU",
     isFriend: true,
     modelUrl: "/models/characters/chiku.glb",
-    colorShirt: "#0d9488",
+    colorShirt: "#0f766e",
     colorPants: "#1e1b4b",
-    colorShoes: "#cbd5e1",
+    colorShoes: "#38bdf8",
     colorSkin: "#334155",
-    shirtGraphicColor: "#5eead4",
+    shirtGraphicColor: "#2dd4bf",
+    hasHeadphones: true,
+    hasGamingSet: true,
+    heightScale: 0.98,
     waypoints: [
       [-18.0, 1.65, 52.0],
       [-28.0, 1.65, 58.0],
@@ -85,12 +97,15 @@ export const FRIENDS_LIST: NPCData[] = [
     name: "ADDY",
     isFriend: true,
     modelUrl: "/models/characters/addy.glb",
-    colorShirt: "#4c1d95",
+    colorShirt: "#18181b",
     colorPants: "#09090b",
-    colorShoes: "#06b6d4",
+    colorShoes: "#0891b2",
     colorSkin: "#334155",
-    shirtGraphicColor: "#c084fc",
-    hasHeadphones: true,
+    shirtGraphicColor: "#a855f7",
+    hasJacket: true,
+    hasBeard: true,
+    hasShortHair: true,
+    heightScale: 1.05,
     waypoints: [
       [3.5, 1.65, 55.0],
       [-3.5, 1.65, 55.0],
@@ -342,6 +357,13 @@ function SingleNPC({
         shirtGraphicColor={data.shirtGraphicColor}
         hasHeadphones={data.hasHeadphones}
         hasCap={data.hasCap}
+        hasBeanie={data.hasBeanie}
+        hasBeard={data.hasBeard}
+        hasShortHair={data.hasShortHair}
+        hasJacket={data.hasJacket}
+        hasBag={data.hasBag}
+        hasGamingSet={data.hasGamingSet}
+        heightScale={data.heightScale}
         isFriend={data.isFriend}
         name={data.name}
         activityState={npcState}

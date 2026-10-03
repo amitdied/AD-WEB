@@ -18,6 +18,11 @@ export interface HumanoidCharacterProps {
   hasHeadphones?: boolean;
   hasCap?: boolean;
   hasBeanie?: boolean;
+  hasBeard?: boolean;
+  hasShortHair?: boolean;
+  hasJacket?: boolean;
+  hasBag?: boolean;
+  hasGamingSet?: boolean;
   isFriend?: boolean;
   name?: string;
   activityState?: HumanoidActivityState;
@@ -144,6 +149,11 @@ function AnatomicalHumanoidFallback({
   hasHeadphones = false,
   hasCap = false,
   hasBeanie = false,
+  hasBeard = false,
+  hasShortHair = false,
+  hasJacket = false,
+  hasBag = false,
+  hasGamingSet = false,
   activityState = "IDLE",
 }: Omit<HumanoidCharacterProps, "modelUrl">) {
   const leftLegRef = useRef<THREE.Group>(null);
@@ -177,16 +187,19 @@ function AnatomicalHumanoidFallback({
     <group>
       {/* 1. HEAD, FACE & ACCESSORIES */}
       <group ref={headRef} position={[0, 1.58, 0]}>
+        {/* Head Base */}
         <mesh position={[0, 0, 0]} castShadow>
           <sphereGeometry args={[0.13, 16, 16]} />
           <meshStandardMaterial color={colorSkin} roughness={0.65} />
         </mesh>
 
+        {/* Nose */}
         <mesh position={[0, -0.01, 0.12]}>
           <boxGeometry args={[0.035, 0.06, 0.04]} />
           <meshStandardMaterial color={colorSkin} roughness={0.65} />
         </mesh>
 
+        {/* Eyes */}
         <mesh position={[-0.045, 0.02, 0.11]}>
           <sphereGeometry args={[0.02, 8, 8]} />
           <meshStandardMaterial color="#0f172a" roughness={0.2} />
@@ -196,6 +209,52 @@ function AnatomicalHumanoidFallback({
           <meshStandardMaterial color="#0f172a" roughness={0.2} />
         </mesh>
 
+        {/* Eyebrows (Heavy sloped eyebrows for beard/masculine features) */}
+        <mesh position={[-0.045, 0.045, 0.115]} rotation={[0, 0, hasBeard ? -0.15 : -0.05]}>
+          <boxGeometry args={[0.04, 0.012, 0.01]} />
+          <meshStandardMaterial color="#09090b" roughness={0.9} />
+        </mesh>
+        <mesh position={[0.045, 0.045, 0.115]} rotation={[0, 0, hasBeard ? 0.15 : 0.05]}>
+          <boxGeometry args={[0.04, 0.012, 0.01]} />
+          <meshStandardMaterial color="#09090b" roughness={0.9} />
+        </mesh>
+
+        {/* Short Hair (Addy / Brutal Rapper) */}
+        {hasShortHair && !hasBeanie && !hasCap && (
+          <group position={[0, 0.03, -0.01]}>
+            <mesh>
+              <sphereGeometry args={[0.136, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+              <meshStandardMaterial color="#09090b" roughness={0.95} />
+            </mesh>
+          </group>
+        )}
+
+        {/* Heavy Beard (Addy) */}
+        {hasBeard && (
+          <group position={[0, -0.04, 0.01]}>
+            {/* Jaw/Chin Wrap */}
+            <mesh position={[0, -0.03, 0.03]}>
+              <boxGeometry args={[0.18, 0.09, 0.15]} />
+              <meshStandardMaterial color="#09090b" roughness={0.95} />
+            </mesh>
+            {/* Sideburns */}
+            <mesh position={[-0.09, 0.02, 0.01]}>
+              <boxGeometry args={[0.03, 0.08, 0.08]} />
+              <meshStandardMaterial color="#09090b" roughness={0.95} />
+            </mesh>
+            <mesh position={[0.09, 0.02, 0.01]}>
+              <boxGeometry args={[0.03, 0.08, 0.08]} />
+              <meshStandardMaterial color="#09090b" roughness={0.95} />
+            </mesh>
+            {/* Mustache */}
+            <mesh position={[0, -0.01, 0.11]}>
+              <boxGeometry args={[0.08, 0.022, 0.03]} />
+              <meshStandardMaterial color="#09090b" roughness={0.95} />
+            </mesh>
+          </group>
+        )}
+
+        {/* Beanie (Amitdied) */}
         {hasBeanie && (
           <group position={[0, 0.06, -0.01]}>
             <mesh>
@@ -209,6 +268,7 @@ function AnatomicalHumanoidFallback({
           </group>
         )}
 
+        {/* Cap (Sahil) */}
         {hasCap && !hasBeanie && (
           <group position={[0, 0.05, 0]}>
             <mesh position={[0, 0.04, -0.01]} rotation={[-0.1, 0, 0]}>
@@ -222,7 +282,34 @@ function AnatomicalHumanoidFallback({
           </group>
         )}
 
-        {hasHeadphones && (
+        {/* Gaming Headset (Chiku) */}
+        {hasGamingSet && (
+          <group position={[0, 0.02, 0]}>
+            {/* Headband */}
+            <mesh position={[0, 0.12, 0]} rotation={[0, 0, Math.PI / 2]}>
+              <torusGeometry args={[0.15, 0.018, 8, 16, Math.PI]} />
+              <meshStandardMaterial color="#09090b" roughness={0.3} metalness={0.8} />
+            </mesh>
+            {/* Left Earcup with glowing cyan trim */}
+            <mesh position={[-0.14, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+              <cylinderGeometry args={[0.05, 0.05, 0.03, 12]} />
+              <meshStandardMaterial color="#0f766e" emissive="#2dd4bf" emissiveIntensity={0.8} />
+            </mesh>
+            {/* Right Earcup with glowing cyan trim */}
+            <mesh position={[0.14, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+              <cylinderGeometry args={[0.05, 0.05, 0.03, 12]} />
+              <meshStandardMaterial color="#0f766e" emissive="#2dd4bf" emissiveIntensity={0.8} />
+            </mesh>
+            {/* Mic Boom */}
+            <mesh position={[-0.12, -0.04, 0.08]} rotation={[0.3, 0.4, 0]}>
+              <cylinderGeometry args={[0.006, 0.006, 0.12, 8]} />
+              <meshStandardMaterial color="#38bdf8" emissive="#0284c7" emissiveIntensity={0.9} />
+            </mesh>
+          </group>
+        )}
+
+        {/* Standard Headphones */}
+        {hasHeadphones && !hasGamingSet && (
           <group position={[0, 0, 0]}>
             <mesh position={[0, 0.12, 0]} rotation={[0, 0, Math.PI / 2]}>
               <torusGeometry args={[0.15, 0.018, 8, 16, Math.PI]} />
@@ -246,11 +333,55 @@ function AnatomicalHumanoidFallback({
         <meshStandardMaterial color={colorSkin} roughness={0.65} />
       </mesh>
 
+      {/* Chain Necklace for Rappers */}
+      <mesh position={[0, 1.34, 0.04]} rotation={[Math.PI / 3, 0, 0]}>
+        <torusGeometry args={[0.11, 0.012, 8, 16]} />
+        <meshStandardMaterial color="#e2e8f0" metalness={0.9} roughness={0.1} />
+      </mesh>
+
       <group position={[0, 1.1, 0]}>
+        {/* Base Shirt */}
         <mesh position={[0, 0, 0]} castShadow>
           <boxGeometry args={[0.44, 0.58, 0.28]} />
           <meshStandardMaterial color={colorShirt} roughness={0.8} />
         </mesh>
+
+        {/* Streetwear Open Jacket (Addy) */}
+        {hasJacket && (
+          <group position={[0, 0, 0]}>
+            {/* Left Jacket Side */}
+            <mesh position={[-0.18, 0, 0.02]}>
+              <boxGeometry args={[0.14, 0.62, 0.32]} />
+              <meshStandardMaterial color="#18181b" roughness={0.85} />
+            </mesh>
+            {/* Right Jacket Side */}
+            <mesh position={[0.18, 0, 0.02]}>
+              <boxGeometry args={[0.14, 0.62, 0.32]} />
+              <meshStandardMaterial color="#18181b" roughness={0.85} />
+            </mesh>
+            {/* Back Jacket */}
+            <mesh position={[0, 0, -0.02]}>
+              <boxGeometry args={[0.48, 0.62, 0.08]} />
+              <meshStandardMaterial color="#18181b" roughness={0.85} />
+            </mesh>
+          </group>
+        )}
+
+        {/* Crossbody Bag Strap & Pouch (Sahil) */}
+        {hasBag && (
+          <group position={[0, 0, 0]}>
+            <mesh position={[0, 0.02, 0]} rotation={[0, 0, 0.6]}>
+              <boxGeometry args={[0.05, 0.65, 0.31]} />
+              <meshStandardMaterial color="#09090b" roughness={0.9} />
+            </mesh>
+            <mesh position={[0.22, -0.18, 0.12]} rotation={[0, -0.2, 0]}>
+              <boxGeometry args={[0.16, 0.22, 0.08]} />
+              <meshStandardMaterial color="#18181b" roughness={0.7} />
+            </mesh>
+          </group>
+        )}
+
+        {/* Graphic Emblem */}
         {shirtGraphicColor && (
           <mesh position={[0, 0.08, 0.145]}>
             <planeGeometry args={[0.2, 0.2]} />

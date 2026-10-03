@@ -84,9 +84,9 @@ function PlayerCharacter({
     <group ref={charGroupRef}>
       <HumanoidCharacter
         modelUrl="/models/characters/player_amitdied.glb"
-        colorShirt="#0b0f19"
+        colorShirt="#09090b"
         colorPants="#0f172a"
-        colorShoes="#f8fafc"
+        colorShoes="#dc2626"
         colorSkin="#334155"
         shirtGraphicColor="#ef4444"
         hasHeadphones={true}
