@@ -41,6 +41,16 @@ interface WorldModeProps {
   onExited: () => void;
 }
 
+export interface LandmarkOverlayData {
+  title: string;
+  tag: string;
+  subhead: string;
+  accessLevel: string;
+  description: string;
+  stats: string[];
+  accentColor: "red" | "purple" | "amber" | "cyan" | "sky" | "orange";
+}
+
 export function WorldMode({
   stage,
   onExit,
@@ -62,11 +72,27 @@ export function WorldMode({
   const [isCinemaTerminalOpen, setIsCinemaTerminalOpen] = useState(false);
   const [selectedCinemaProject, setSelectedCinemaProject] = useState<PortfolioVideo | null>(null);
   const [cameraMode, setCameraMode] = useState<"FPP" | "TPP">("FPP");
+  const [navMode, setNavMode] = useState<"CHARACTER" | "VEHICLE">("CHARACTER");
+  const [vehicleSpeedKmh, setVehicleSpeedKmh] = useState(0);
+  const [isNearVehicle, setIsNearVehicle] = useState(false);
   const [playerPos, setPlayerPos] = useState<[number, number, number]>([0, 1.65, 2.5]);
   const [playerYaw, setPlayerYaw] = useState<number>(0);
   const [teleportTarget, setTeleportTarget] = useState<[number, number, number] | null>(null);
   const [nearbyFriend, setNearbyFriend] = useState<FriendNPCData | null>(null);
   const [friendDialogue, setFriendDialogue] = useState<{ friend: FriendNPCData; lineIndex: number } | null>(null);
+  const [landmarkOverlayData, setLandmarkOverlayData] = useState<LandmarkOverlayData | null>(null);
+
+  const handleToggleNavMode = useCallback(() => {
+    setNavMode((prev) => {
+      const next = prev === "CHARACTER" ? "VEHICLE" : "CHARACTER";
+      setActiveMessage(
+        next === "VEHICLE"
+          ? "VEHICLE MODE // AMITDIED BUGGY ONLINE [W/A/S/D TO DRIVE • R TO RESET • E TO EXIT]"
+          : "CHARACTER MODE // DISMOUNTED ON FOOT"
+      );
+      return next;
+    });
+  }, []);
   const [isMobile, setIsMobile] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() =>
     typeof window !== "undefined"
@@ -170,6 +196,11 @@ export function WorldMode({
       }
 
       if (e.key === "Escape" && stage === "open") {
+        if (landmarkOverlayData) {
+          e.preventDefault();
+          setLandmarkOverlayData(null);
+          return;
+        }
         if (friendDialogue) {
           e.preventDefault();
           setFriendDialogue(null);
@@ -184,6 +215,7 @@ export function WorldMode({
     stage,
     onExit,
     friendDialogue,
+    landmarkOverlayData,
     nearbyFriend,
     isBeatArchiveOpen,
     isCctvTerminalOpen,
@@ -285,6 +317,103 @@ export function WorldMode({
       if (item.id === "FACILITY_ENTRANCE") {
         setTeleportTarget([0, 1.65, 7.8]);
         setActiveMessage("SECURITY AIRLOCK // DESCENDING TO UNDERGROUND FACILITY LEVEL -2...");
+        return;
+      }
+
+      // Landmark Modal Overlays
+      if (item.id === "audio_labs_exterior") {
+        if (document.pointerLockElement) {
+          document.exitPointerLock?.();
+        }
+        setLandmarkOverlayData({
+          title: "AMITDIED AUDIO LABS",
+          tag: "HEADQUARTERS",
+          subhead: "RECORDING / MIXING / MASTERING HEADQUARTERS",
+          accessLevel: "ACCESS LEVEL: PUBLIC EXHIBIT",
+          description: "Analog 808 bus consoles, vacuum tube saturators, and multitrack tape decks online. The main production engine of the AMITDIED sound universe.",
+          stats: ["STATUS: ONLINE 24/7", "FORMAT: 96KHZ / 32-BIT FLOAT", "GEAR: ANALOG CONSOLES & SYNTHS"],
+          accentColor: "red",
+        });
+        return;
+      }
+
+      if (item.id === "cinema_lounge_exterior") {
+        if (document.pointerLockElement) {
+          document.exitPointerLock?.();
+        }
+        setLandmarkOverlayData({
+          title: "35MM CINEMA LOUNGE & CAFE",
+          tag: "VENUE LANDMARK",
+          subhead: "ARCHIVE SCREENINGS & VINYL LOUNGE",
+          accessLevel: "NOW SHOWING: AMITDIED VISUALS",
+          description: "Optical 35mm projection system streaming archival film reels, music videos, and unreleased stems while serving espresso.",
+          stats: ["STATUS: OPEN TO VISITORS", "AUDIO: 35MM OPTICAL & WAX", "BEVERAGES: ESPRESSO & COLD BREW"],
+          accentColor: "purple",
+        });
+        return;
+      }
+
+      if (item.id === "sound_monument") {
+        if (document.pointerLockElement) {
+          document.exitPointerLock?.();
+        }
+        setLandmarkOverlayData({
+          title: "CENTRAL SOUND MONUMENT",
+          tag: "ACOUSTIC MONOLITH",
+          subhead: "RESONATING FREQUENCY SCULPTURE",
+          accessLevel: "FREQUENCY: 108.4 MHZ",
+          description: "Central acoustic tower pulsing synchronously with the master audio bass spectrum across the Central Park Vinyl Plaza.",
+          stats: ["RESONANCE: BASS BARS ACTIVE", "LOCATION: CENTRAL PARK", "SUBWOOFERS: 808 CUSTOM TUNED"],
+          accentColor: "amber",
+        });
+        return;
+      }
+
+      if (item.id === "scenic_telescope") {
+        if (document.pointerLockElement) {
+          document.exitPointerLock?.();
+        }
+        setLandmarkOverlayData({
+          title: "OBSERVATION TELESCOPE",
+          tag: "SCENIC OVERLOOK",
+          subhead: "ELEVATION +24M VISTA POINT",
+          accessLevel: "LIVE PANORAMIC VIEW",
+          description: "Panoramic view across the AMITDIED Audio District, Central Park, and the transmission tower broadcasting live across the valley.",
+          stats: ["VISIBILITY: 100%", "SKYLINE: MOUNTAIN HORIZON", "BROADCAST: TRANSMISSION TOWER ACTIVE"],
+          accentColor: "cyan",
+        });
+        return;
+      }
+
+      if (item.id === "residential_beat_cave") {
+        if (document.pointerLockElement) {
+          document.exitPointerLock?.();
+        }
+        setLandmarkOverlayData({
+          title: "THE BEAT CAVE",
+          tag: "STUDIO LOFT",
+          subhead: "ANALOG 808 SAMPLER HAVEN",
+          accessLevel: "CREATIVE RESIDENCE",
+          description: "Private studio loft outfitted with vintage drum machines, analog samplers, and acoustic dampening panels.",
+          stats: ["LOFT: 01", "EQUIPMENT: HARDWARE SAMPLERS", "BEAT RATE: 140 BPM TRAP"],
+          accentColor: "sky",
+        });
+        return;
+      }
+
+      if (item.id === "residential_vinyl_archive") {
+        if (document.pointerLockElement) {
+          document.exitPointerLock?.();
+        }
+        setLandmarkOverlayData({
+          title: "VINYL ARCHIVE STOREFRONT",
+          tag: "RECORD SHOP",
+          subhead: "RARE WAX & TEST PRESSINGS",
+          accessLevel: "ARCHIVE COLLECTION",
+          description: "Curated collection of unreleased test pressings, 12-inch dubplates, and underground tape cassettes.",
+          stats: ["COLLECTION: 100+ CUTS", "RPM: 33 / 45 / 78", "VAULT: DUBPLATE SELECTION"],
+          accentColor: "orange",
+        });
         return;
       }
 
@@ -422,6 +551,10 @@ export function WorldMode({
           onCameraModeChange={setCameraMode}
           onZoneTransition={(zone) => setActiveMessage(zone)}
           onNearbyFriendChange={setNearbyFriend}
+          navMode={navMode}
+          onToggleNavMode={handleToggleNavMode}
+          onVehicleSpeedChange={setVehicleSpeedKmh}
+          onVehicleProximityChange={setIsNearVehicle}
         />
       )}
 
@@ -505,6 +638,79 @@ export function WorldMode({
             )}
           </AnimatePresence>
 
+          {/* LANDMARK DETAIL OVERLAY MODAL */}
+          <AnimatePresence>
+            {landmarkOverlayData && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md pointer-events-auto font-mono"
+                onClick={() => setLandmarkOverlayData(null)}
+              >
+                <div
+                  className="relative w-full max-w-lg bg-zinc-950 border-2 border-red-500/80 rounded-xl p-6 shadow-[0_0_40px_rgba(239,68,68,0.3)] text-zinc-100 space-y-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div className="flex items-start justify-between border-b border-zinc-800 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-red-950/80 border border-red-500/60 rounded text-[9px] font-bold tracking-widest text-red-400 uppercase">
+                          {landmarkOverlayData.tag}
+                        </span>
+                        <span className="text-[10px] text-zinc-500 tracking-wider">AMITDIED LANDMARK</span>
+                      </div>
+                      <h2 className="text-xl font-bold tracking-wide text-white mt-1">
+                        {landmarkOverlayData.title}
+                      </h2>
+                      <p className="text-xs text-red-400/90 tracking-widest mt-0.5">
+                        {landmarkOverlayData.subhead}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setLandmarkOverlayData(null)}
+                      className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer font-bold"
+                    >
+                      [ESC] CLOSE
+                    </button>
+                  </div>
+
+                  {/* Access Level Badge */}
+                  <div className="flex items-center gap-2 bg-zinc-900/90 px-3 py-1.5 rounded border border-zinc-800 text-xs tracking-wider text-amber-300">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span>{landmarkOverlayData.accessLevel}</span>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-sm text-zinc-300 leading-relaxed tracking-wide">
+                    {landmarkOverlayData.description}
+                  </p>
+
+                  {/* Telemetry & Specs */}
+                  <div className="pt-2 border-t border-zinc-900 space-y-2">
+                    <div className="text-[10px] tracking-widest text-zinc-500 uppercase font-bold">TELEMETRY & SPECS</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-zinc-300">
+                      {landmarkOverlayData.stats.map((stat, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-black/60 px-2.5 py-1.5 rounded border border-zinc-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                          <span className="truncate">{stat}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Footer info */}
+                  <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-2 border-t border-zinc-900">
+                    <span>AMITDIED WORLD • OUTDOOR DISTRICT</span>
+                    <span>PRESS [ESC] OR CLICK TO RETURN</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* In-World CCTV Surveillance Terminal UI */}
           <AnimatePresence>
             {isCctvTerminalOpen && (
@@ -532,6 +738,21 @@ export function WorldMode({
               />
             )}
           </AnimatePresence>
+
+          {/* PROXIMITY VEHICLE ENTRY PROMPT */}
+          {isNearVehicle && navMode === "CHARACTER" && !friendDialogue && (
+            <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-zinc-950/90 border border-amber-500/80 px-4 py-2 rounded-lg text-amber-400 font-mono text-xs shadow-[0_0_25px_rgba(245,158,11,0.3)] animate-pulse pointer-events-auto">
+              <span className="font-bold tracking-widest">AMITDIED BUGGY</span>
+              <span className="text-zinc-600">•</span>
+              <button
+                onClick={handleToggleNavMode}
+                className="flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 rounded font-bold cursor-pointer transition-colors"
+              >
+                <kbd className="bg-amber-900/60 px-1.5 py-0.2 rounded text-[10px]">E</kbd>
+                <span>ENTER VEHICLE</span>
+              </button>
+            </div>
+          )}
 
           {/* PROXIMITY FRIEND TALK PROMPT */}
           {nearbyFriend && !friendDialogue && (
@@ -682,6 +903,22 @@ export function WorldMode({
               <span className="text-zinc-500">CAM:</span>
               <span className="text-red-400 font-bold">{cameraMode}</span>
             </button>
+
+            {/* Vehicle Mode Badge */}
+            <button
+              onClick={handleToggleNavMode}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-950/80 hover:bg-amber-900/90 border border-amber-500/80 rounded text-[10px] tracking-[0.2em] text-amber-300 transition-colors cursor-pointer shadow-sm font-mono"
+              title="Toggle Character Mode / Vehicle Mode [E]"
+            >
+              <span className="text-amber-500 font-bold">MODE:</span>
+              <span className="text-white font-bold">{navMode}</span>
+              {navMode === "VEHICLE" && (
+                <>
+                  <span className="text-zinc-500">•</span>
+                  <span className="text-amber-400 font-bold">{vehicleSpeedKmh} KM/H</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -744,6 +981,20 @@ export function WorldMode({
             </kbd>
             <span>/ CAM ({cameraMode})</span>
           </div>
+          <div className="flex items-center gap-2 text-amber-300 font-bold">
+            <kbd className="px-1.5 py-0.5 bg-amber-950 border border-amber-700 rounded text-[9px] text-amber-300 font-bold">
+              E
+            </kbd>
+            <span>/ {navMode === "VEHICLE" ? "EXIT VEHICLE" : "ENTER VEHICLE"}</span>
+          </div>
+          {navMode === "VEHICLE" && (
+            <div className="flex items-center gap-2 text-amber-300 font-bold">
+              <kbd className="px-1.5 py-0.5 bg-amber-950 border border-amber-700 rounded text-[9px] text-amber-300 font-bold">
+                R
+              </kbd>
+              <span>/ RESET SPAWN</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-red-400/90 font-bold">
             <kbd className="px-1.5 py-0.5 bg-red-950 border border-red-800 rounded text-[9px] text-red-300 font-bold">
               M

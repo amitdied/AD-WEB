@@ -737,6 +737,20 @@ export function WorldMinimap({
                           );
                         })()}
 
+                        {/* Phase B Road Network Overlay */}
+                        {(() => {
+                          const p1 = outWorldToMap(0, 22, 320, 380);
+                          const p2 = outWorldToMap(0, 94, 320, 380);
+                          const p3 = outWorldToMap(-52, 54, 320, 380);
+                          const p4 = outWorldToMap(52, 54, 320, 380);
+                          return (
+                            <g>
+                              <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#f59e0b" strokeWidth="4" opacity="0.6" strokeDasharray="4 2" />
+                              <line x1={p3.x} y1={p3.y} x2={p4.x} y2={p4.y} stroke="#f59e0b" strokeWidth="4" opacity="0.6" strokeDasharray="4 2" />
+                            </g>
+                          );
+                        })()}
+
                         {/* Friend NPC Markers on Expanded Outdoor Map */}
                         {[
                           { name: "SAHIL", label: "S", pos: [-2, 50], color: "#f59e0b" },

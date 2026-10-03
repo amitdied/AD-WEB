@@ -277,15 +277,15 @@ export const WORLD_EQUIPMENT_INTERACTABLES: WorldInteractable[] = [
 
   // 9. OUTDOOR CENTRAL PARK MONUMENT
   {
-    id: "OUTDOOR_MONUMENT",
+    id: "sound_monument",
     type: "terminal",
-    name: "AMITDIED ACOUSTIC MONUMENT",
+    name: "CENTRAL SOUND MONUMENT",
     label: "SOUND MONUMENT",
-    actionText: "EXAMINE",
-    message: "ACOUSTIC MONUMENT // 'THE FREQUENCY OF WHAT REMAINS — RESONATING ACROSS THE PARK'",
+    actionText: "EXAMINE SOUND MONUMENT",
+    message: "ACOUSTIC MONOLITH // RESONATING WITH MASTER BASS FREQUENCIES ACROSS CENTRAL PARK",
     room: "OUTSIDE",
-    position: [0, 1.2, 55.0],
-    radius: 2.8,
+    position: [0, 1.6, 55.0],
+    radius: 3.2,
   },
 
   // 10. OUTDOOR PARK BENCH
@@ -301,30 +301,69 @@ export const WORLD_EQUIPMENT_INTERACTABLES: WorldInteractable[] = [
     radius: 2.0,
   },
 
-  // 11. OUTDOOR SOUND LABS & RECORD SHOP
+  // 11. AMITDIED AUDIO LABS
   {
-    id: "OUTDOOR_RECORD_SHOP",
+    id: "audio_labs_exterior",
     type: "terminal",
-    name: "AMITDIED AUDIO LABS & VINYL",
-    label: "SOUND LABS",
-    actionText: "INSPECT",
-    message: "AMITDIED SOUND LABS // 24/7 ANALOG CUTTING ROOM & CREATIVE HUB",
+    name: "AMITDIED AUDIO LABS",
+    label: "AUDIO LABS",
+    actionText: "ACCESS AUDIO LABS",
+    message: "AMITDIED AUDIO LABS // RECORDING, MIXING & MASTERING HEADQUARTERS",
     room: "OUTSIDE",
-    position: [38.0, 1.4, 48.0],
-    radius: 3.0,
+    position: [40.0, 1.6, 47.0],
+    radius: 3.5,
   },
 
-  // 12. OUTDOOR SCENIC OVERLOOK
+  // 12. 35MM CINEMA LOUNGE & CAFE
   {
-    id: "OUTDOOR_OVERLOOK",
+    id: "cinema_lounge_exterior",
     type: "terminal",
-    name: "SCENIC RIDGE OVERLOOK",
-    label: "TELESCOPE",
-    actionText: "LOOK",
-    message: "DISTANT SKYLINE // MOUNTAIN HORIZON ILLUMINATED BY SUNLIGHT",
+    name: "35MM CINEMA LOUNGE & CAFE",
+    label: "35MM CINEMA",
+    actionText: "ACCESS CINEMA LOUNGE",
+    message: "35MM CINEMA LOUNGE & CAFE // ARCHIVE SCREENINGS & VINYL LOUNGE",
     room: "OUTSIDE",
-    position: [0, 1.4, 102.0],
-    radius: 2.5,
+    position: [40.0, 1.6, 67.0],
+    radius: 3.5,
+  },
+
+  // 13. NORTHERN SCENIC OVERLOOK TELESCOPE
+  {
+    id: "scenic_telescope",
+    type: "terminal",
+    name: "OBSERVATION TELESCOPE",
+    label: "TELESCOPE",
+    actionText: "LOOK THROUGH TELESCOPE",
+    message: "OBSERVATION TELESCOPE // PANORAMIC VIEW OF THE AMITDIED SKYLINE & VALLEY",
+    room: "OUTSIDE",
+    position: [0, 1.6, 102.0],
+    radius: 2.8,
+  },
+
+  // 14. RESIDENTIAL BEAT CAVE
+  {
+    id: "residential_beat_cave",
+    type: "terminal",
+    name: "THE BEAT CAVE Loft",
+    label: "BEAT CAVE",
+    actionText: "EXAMINE BEAT CAVE",
+    message: "BEAT CAVE STUDIO LOFT // ANALOG 808 SAMPLER SESSION IN PROGRESS",
+    room: "OUTSIDE",
+    position: [-40.0, 1.6, 43.0],
+    radius: 3.2,
+  },
+
+  // 15. RESIDENTIAL VINYL ARCHIVE
+  {
+    id: "residential_vinyl_archive",
+    type: "terminal",
+    name: "VINYL ARCHIVE STOREFRONT",
+    label: "VINYL ARCHIVE",
+    actionText: "EXAMINE VINYL ARCHIVE",
+    message: "VINYL ARCHIVE // RARE TEST PRESSINGS & UNDERGROUND WAX VAULT",
+    room: "OUTSIDE",
+    position: [-40.0, 1.6, 57.0],
+    radius: 3.2,
   },
 ];
 
@@ -519,5 +558,14 @@ export const SAFE_SPAWN_POINTS: SafeSpawnPoint[] = [
     coordinates: [0, 1.65, 36.0],
     description: "SURFACE LEVEL • CENTRAL PARK & OUTDOOR DISTRICT",
   },
+];
+
+// Phase B: Safe Outdoor Vehicle Reset Coordinates
+export const SAFE_VEHICLE_SPAWNS: [number, number, number][] = [
+  [0, 0.45, 30.0],     // Bunker Courtyard Road
+  [0, 0.45, 48.0],     // Central Park Boulevard
+  [-32.0, 0.45, 55.0],  // Residential Cross Avenue
+  [32.0, 0.45, 55.0],   // Commercial Audio Labs Drive
+  [0, 0.45, 90.0],     // Scenic Overlook Highway
 ];
 

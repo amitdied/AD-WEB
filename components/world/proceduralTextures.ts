@@ -93,6 +93,116 @@ export function createCctvMonitorTexture(
   return texture;
 }
 
+export function createAsphaltGrainTexture(): THREE.CanvasTexture {
+  const canvas = getSafeCanvas(512, 512);
+  if (!canvas) return new THREE.CanvasTexture(null as any);
+
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = "#111827";
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Grain Noise Aggregates
+    const imgData = ctx.getImageData(0, 0, 512, 512);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 22;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // Subtle Asphalt Faded Seams
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 3;
+    for (let x = 0; x < 512; x += 128) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 512);
+      ctx.stroke();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(12, 12);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export function createConcreteTexture(): THREE.CanvasTexture {
+  const canvas = getSafeCanvas(512, 512);
+  if (!canvas) return new THREE.CanvasTexture(null as any);
+
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(0, 0, 512, 512);
+
+    const imgData = ctx.getImageData(0, 0, 512, 512);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 14;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // Concrete Tile Seam Grid Lines
+    ctx.strokeStyle = "rgba(15, 23, 42, 0.4)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, 512, 512);
+    ctx.strokeRect(0, 0, 256, 256);
+    ctx.strokeRect(256, 256, 256, 256);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(8, 8);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export function createBrickPatternTexture(): THREE.CanvasTexture {
+  const canvas = getSafeCanvas(512, 512);
+  if (!canvas) return new THREE.CanvasTexture(null as any);
+
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    // Mortar Background
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(0, 0, 512, 512);
+
+    const rows = 16;
+    const cols = 8;
+    const rowHeight = 512 / rows;
+    const colWidth = 512 / cols;
+
+    for (let r = 0; r < rows; r++) {
+      const offset = (r % 2) * (colWidth / 2);
+      for (let c = -1; c <= cols; c++) {
+        const x = c * colWidth + offset;
+        const y = r * rowHeight;
+        // Brick Color Variation
+        const shade = Math.floor(130 + Math.random() * 40);
+        ctx.fillStyle = `rgb(${shade + 30}, ${Math.floor(shade * 0.3)}, ${Math.floor(shade * 0.1)})`;
+        ctx.fillRect(x + 2, y + 2, colWidth - 4, rowHeight - 4);
+      }
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(4, 4);
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export function createCinemaProjectionTexture(
   state: "offline" | "idle" | "projecting" | boolean
 ): THREE.CanvasTexture {

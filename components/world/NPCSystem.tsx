@@ -23,6 +23,7 @@ export interface NPCData {
   shirtGraphicColor?: string;
   hasHeadphones?: boolean;
   hasCap?: boolean;
+  modelUrl?: string;
   waypoints: [number, number, number][];
   speed: number;
   pauseTime: number; // in seconds
@@ -34,6 +35,7 @@ export const FRIENDS_LIST: NPCData[] = [
     id: "FRIEND_SAHIL",
     name: "SAHIL",
     isFriend: true,
+    modelUrl: "/models/characters/sahil.glb",
     colorShirt: "#09090b",
     colorPants: "#18181b",
     colorShoes: "#f8fafc",
@@ -58,6 +60,7 @@ export const FRIENDS_LIST: NPCData[] = [
     id: "FRIEND_CHIKU",
     name: "CHIKU",
     isFriend: true,
+    modelUrl: "/models/characters/chiku.glb",
     colorShirt: "#0d9488",
     colorPants: "#1e1b4b",
     colorShoes: "#cbd5e1",
@@ -81,6 +84,7 @@ export const FRIENDS_LIST: NPCData[] = [
     id: "FRIEND_ADDY",
     name: "ADDY",
     isFriend: true,
+    modelUrl: "/models/characters/addy.glb",
     colorShirt: "#4c1d95",
     colorPants: "#09090b",
     colorShoes: "#06b6d4",
@@ -225,8 +229,14 @@ function SingleNPC({
   const walkCycleRef = useRef(0);
   const isNearbyRef = useRef(false);
 
+  const [npcState, setNpcState] = useState<NPCActivityState>("IDLE");
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
+
+    if (stateRef.current !== npcState) {
+      setNpcState(stateRef.current);
+    }
 
     const safeDelta = Math.min(delta, 0.1);
     const curr = currentPosRef.current;
@@ -324,6 +334,7 @@ function SingleNPC({
   return (
     <group ref={groupRef} position={data.waypoints[0]}>
       <NPCCharacter
+        modelUrl={data.modelUrl}
         colorShirt={data.colorShirt}
         colorPants={data.colorPants}
         colorShoes={data.colorShoes}
@@ -333,6 +344,7 @@ function SingleNPC({
         hasCap={data.hasCap}
         isFriend={data.isFriend}
         name={data.name}
+        activityState={npcState}
       />
     </group>
   );
