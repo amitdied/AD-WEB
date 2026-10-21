@@ -351,36 +351,41 @@ export async function syncWithGoogleSheet(): Promise<SyncResponse> {
 export async function getCustomBeats() {
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("beats")
-      .select("*")
-      .order("created_at", { ascending: false });
+    if (supabase) {
+      const { data, error } = await supabase
+        .from("beats")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      return data.map((row: any) => ({
-        id: row.id || '',
-        title: row.title || '',
-        producer: row.producer || 'AMITDIED',
-        bpm: typeof row.bpm === 'number' ? row.bpm : (parseFloat(String(row.bpm)) || 120),
-        key: row.key || '',
-        genre: row.genre || '',
-        price: typeof row.price === 'number' ? row.price : (parseFloat(String(row.price)) || 0),
-        buyLink: row.buy_link || row.buyLink || '',
-        description: row.description || '',
-        coverUrl: row.cover_url || row.coverUrl || '',
-        audioUrl: row.audio_url || row.audioUrl || '',
-        audioStoragePath: row.audio_storage_path || row.audioStoragePath || '',
-        coverStoragePath: row.cover_storage_path || row.coverStoragePath || '',
-        storageProvider: row.storage_provider || row.storageProvider || 'drive',
-        moodTags: Array.isArray(row.mood_tags) ? row.mood_tags : (Array.isArray(row.moodTags) ? row.moodTags : []),
-      }));
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map((row: any) => ({
+          id: row.id || '',
+          title: row.title || '',
+          producer: row.producer || 'AMITDIED',
+          bpm: typeof row.bpm === 'number' ? row.bpm : (parseFloat(String(row.bpm)) || 120),
+          key: row.key || '',
+          genre: row.genre || '',
+          price: typeof row.price === 'number' ? row.price : (parseFloat(String(row.price)) || 0),
+          buyLink: row.buy_link || row.buyLink || '',
+          description: row.description || '',
+          coverUrl: row.cover_url || row.coverUrl || '',
+          audioUrl: row.audio_url || row.audioUrl || '',
+          audioStoragePath: row.audio_storage_path || row.audioStoragePath || '',
+          coverStoragePath: row.cover_storage_path || row.coverStoragePath || '',
+          storageProvider: row.storage_provider || row.storageProvider || 'drive',
+          moodTags: Array.isArray(row.mood_tags) ? row.mood_tags : (Array.isArray(row.moodTags) ? row.moodTags : []),
+        }));
+      }
     }
   } catch (e) {
     console.warn("Could not read beats from Supabase, using local DB:", e);
   }
 
   const localDb = readDb();
-  return localDb.beats || [];
+  if (Array.isArray(localDb.beats) && localDb.beats.length > 0) {
+    return localDb.beats;
+  }
+  return beats;
 }
 
 export type ActionResponse<T = any> =
@@ -435,28 +440,39 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
     };
 
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("beats").insert({
-      id: newBeat.id,
-      title: newBeat.title,
-      producer: newBeat.producer,
-      bpm: newBeat.bpm,
-      key: newBeat.key,
-      genre: newBeat.genre,
-      price: newBeat.price,
-      buy_link: newBeat.buyLink,
-      description: newBeat.description,
-      cover_url: newBeat.coverUrl,
-      audio_url: newBeat.audioUrl,
-      mood_tags: newBeat.moodTags,
-      audio_storage_path: newBeat.audioStoragePath,
-      cover_storage_path: newBeat.coverStoragePath,
-      storage_provider: newBeat.storageProvider,
-      created_at: newBeat.createdAt,
-    });
+    if (supabase) {
+      try {
+        const { error } = await supabase.from("beats").insert({
+          id: newBeat.id,
+          title: newBeat.title,
+          producer: newBeat.producer,
+          bpm: newBeat.bpm,
+          key: newBeat.key,
+          genre: newBeat.genre,
+          price: newBeat.price,
+          buy_link: newBeat.buyLink,
+          description: newBeat.description,
+          cover_url: newBeat.coverUrl,
+          audio_url: newBeat.audioUrl,
+          mood_tags: newBeat.moodTags,
+          audio_storage_path: newBeat.audioStoragePath,
+          cover_storage_path: newBeat.coverStoragePath,
+          storage_provider: newBeat.storageProvider,
+          created_at: newBeat.createdAt,
+        });
 
-    if (error) {
-      return { ok: false, error: "SUPABASE_WRITE_FAILED: " + error.message };
+        if (error) {
+          console.warn("[addBeat] Supabase insert warning:", error.message);
+        }
+      } catch (err) {
+        console.warn("[addBeat] Supabase insert failed:", err);
+      }
     }
+
+    const db = readDb();
+    if (!Array.isArray(db.beats)) db.beats = [];
+    db.beats.unshift(newBeat);
+    writeDb(db);
 
     revalidatePath("/");
     revalidatePath("/admin");
@@ -465,7 +481,7 @@ export async function addBeat(beat: any): Promise<ActionResponse> {
     console.error("[ADD BEAT ERROR]", error);
     return {
       ok: false,
-      error: "SUPABASE_WRITE_FAILED: " + (error?.message || "unknown"),
+      error: "WRITE_FAILED: " + (error?.message || "unknown"),
     };
   }
 }
@@ -477,17 +493,31 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
       return { ok: false, error: "UNAUTHORIZED: Admin session required" };
     }
 
-    const supabase = getSupabaseAdmin();
-    const { data: existingRows, error: fetchError } = await supabase
-      .from("beats")
-      .select("*")
-      .eq("id", id);
+    const db = readDb();
+    const localBeats = Array.isArray(db.beats) ? db.beats : [];
+    const localIndex = localBeats.findIndex((b: any) => b.id === id);
 
-    if (fetchError || !existingRows || existingRows.length === 0) {
+    let currentBeat: any = localIndex !== -1 ? localBeats[localIndex] : null;
+
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      try {
+        const { data: existingRows } = await supabase
+          .from("beats")
+          .select("*")
+          .eq("id", id);
+        if (existingRows && existingRows.length > 0) {
+          currentBeat = existingRows[0];
+        }
+      } catch (err) {
+        console.warn("[updateBeat] Supabase fetch fallback:", err);
+      }
+    }
+
+    if (!currentBeat) {
       return { ok: false, error: "BEAT_NOT_FOUND" };
     }
 
-    const currentBeat = existingRows[0];
     const currentCoverUrl = currentBeat.cover_url || currentBeat.coverUrl || "/placeholder-cover.png";
     const currentAudioUrl = currentBeat.audio_url || currentBeat.audioUrl || "";
     const currentPrice = currentBeat.price || 0;
@@ -531,29 +561,39 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
       moodTags: updatedMoodTags,
     };
 
-    const { error: updateError } = await supabase
-      .from("beats")
-      .update({
-        title: updatedBeat.title,
-        producer: updatedBeat.producer,
-        bpm: updatedBeat.bpm,
-        key: updatedBeat.key,
-        genre: updatedBeat.genre,
-        price: updatedBeat.price,
-        buy_link: updatedBeat.buyLink,
-        description: updatedBeat.description,
-        cover_url: updatedBeat.coverUrl,
-        audio_url: updatedBeat.audioUrl,
-        mood_tags: updatedBeat.moodTags,
-        audio_storage_path: updatedBeat.audioStoragePath,
-        cover_storage_path: updatedBeat.coverStoragePath,
-        storage_provider: updatedBeat.storageProvider,
-      })
-      .eq("id", id);
-
-    if (updateError) {
-      return { ok: false, error: "SUPABASE_WRITE_FAILED: " + updateError.message };
+    if (supabase) {
+      try {
+        await supabase
+          .from("beats")
+          .update({
+            title: updatedBeat.title,
+            producer: updatedBeat.producer,
+            bpm: updatedBeat.bpm,
+            key: updatedBeat.key,
+            genre: updatedBeat.genre,
+            price: updatedBeat.price,
+            buy_link: updatedBeat.buyLink,
+            description: updatedBeat.description,
+            cover_url: updatedBeat.coverUrl,
+            audio_url: updatedBeat.audioUrl,
+            mood_tags: updatedBeat.moodTags,
+            audio_storage_path: updatedBeat.audioStoragePath,
+            cover_storage_path: updatedBeat.coverStoragePath,
+            storage_provider: updatedBeat.storageProvider,
+          })
+          .eq("id", id);
+      } catch (err) {
+        console.warn("[updateBeat] Supabase update warning:", err);
+      }
     }
+
+    if (localIndex !== -1) {
+      db.beats[localIndex] = { ...db.beats[localIndex], ...updatedBeat };
+    } else {
+      if (!Array.isArray(db.beats)) db.beats = [];
+      db.beats.push(updatedBeat);
+    }
+    writeDb(db);
 
     revalidatePath("/");
     revalidatePath("/admin");
@@ -562,7 +602,7 @@ export async function updateBeat(id: string, updatedData: any): Promise<ActionRe
     console.error("[UPDATE BEAT ERROR]", error);
     return {
       ok: false,
-      error: "SUPABASE_WRITE_FAILED: " + (error?.message || "unknown"),
+      error: "WRITE_FAILED: " + (error?.message || "unknown"),
     };
   }
 }
@@ -575,13 +615,21 @@ export async function deleteBeat(id: string): Promise<ActionResponse> {
     }
 
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase
-      .from("beats")
-      .delete()
-      .eq("id", id);
+    if (supabase) {
+      try {
+        await supabase
+          .from("beats")
+          .delete()
+          .eq("id", id);
+      } catch (err) {
+        console.warn("[deleteBeat] Supabase delete warning:", err);
+      }
+    }
 
-    if (error) {
-      return { ok: false, error: "SUPABASE_WRITE_FAILED: " + error.message };
+    const db = readDb();
+    if (Array.isArray(db.beats)) {
+      db.beats = db.beats.filter((b: any) => b.id !== id);
+      writeDb(db);
     }
 
     revalidatePath("/");
@@ -591,7 +639,7 @@ export async function deleteBeat(id: string): Promise<ActionResponse> {
     console.error("[DELETE BEAT ERROR]", error);
     return {
       ok: false,
-      error: "SUPABASE_WRITE_FAILED: " + (error?.message || "unknown"),
+      error: "WRITE_FAILED: " + (error?.message || "unknown"),
     };
   }
 }
@@ -646,25 +694,47 @@ export async function getCustomVideos(
 ): Promise<PortfolioVideoItem[]> {
   try {
     const supabase = getSupabaseAdmin();
-    let query = supabase
-      .from("portfolio_items")
-      .select("*")
-      .order("order_index", { ascending: true });
+    if (supabase) {
+      let query = supabase
+        .from("portfolio_items")
+        .select("*")
+        .order("order_index", { ascending: true });
 
-    if (!includeHidden) {
-      query = query.eq("visible", true);
-    }
+      if (!includeHidden) {
+        query = query.eq("visible", true);
+      }
 
-    const { data, error } = await query;
-    if (error) {
-      console.error("[getCustomVideos] Supabase error:", error.message);
-      return [];
+      const { data, error } = await query;
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map(mapRow);
+      }
     }
-    return (data || []).map(mapRow);
   } catch (e: any) {
-    console.error("[getCustomVideos] Failed:", e?.message || e);
-    return [];
+    console.warn("[getCustomVideos] Supabase unavailable, checking local storage:", e?.message || e);
   }
+
+  const localDb = readDb();
+  if (Array.isArray(localDb.videos) && localDb.videos.length > 0) {
+    const vids = includeHidden
+      ? localDb.videos
+      : localDb.videos.filter((v: any) => v.visible !== false);
+    return vids.map(mapRow);
+  }
+
+  return YOUTUBE_LINKS.map((url, idx) => {
+    const ytId = extractYouTubeId(url) || `yt-${idx}`;
+    return {
+      id: `yt-${idx + 1}`,
+      title: `Archive Video ${idx + 1}`,
+      url,
+      description: "",
+      order_index: idx,
+      visible: true,
+      youtubeId: ytId,
+      youtubeUrl: url,
+      thumbnail: `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`,
+    };
+  });
 }
 
 export async function addVideo(videoData: {
@@ -690,34 +760,44 @@ export async function addVideo(videoData: {
     const supabase = getSupabaseAdmin();
     const standardUrl = `https://www.youtube.com/watch?v=${ytId}`;
 
-    // Prevent duplicate URL
-    const { data: existing } = await supabase
-      .from("portfolio_items")
-      .select("id")
-      .eq("url", standardUrl)
-      .maybeSingle();
+    const db = readDb();
+    if (!Array.isArray(db.videos)) db.videos = [];
 
-    if (existing) {
+    // Prevent duplicate URL
+    if (db.videos.some((v: any) => v.url === standardUrl)) {
       return {
         ok: false,
         error: "DUPLICATE_VIDEO: This YouTube video is already in your portfolio.",
       };
     }
 
-    // Next yt-N id
-    const { data: allRows } = await supabase
-      .from("portfolio_items")
-      .select("id, order_index");
-
     let nextNum = 1;
     let maxOrder = 0;
-    if (Array.isArray(allRows)) {
-      for (const row of allRows) {
-        const m = String(row.id).match(/^yt-(\d+)$/);
-        if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
-        if (typeof row.order_index === "number") {
-          maxOrder = Math.max(maxOrder, row.order_index);
+
+    for (const v of db.videos) {
+      const m = String(v.id).match(/^yt-(\d+)$/);
+      if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+      if (typeof v.order_index === "number") {
+        maxOrder = Math.max(maxOrder, v.order_index);
+      }
+    }
+
+    if (supabase) {
+      try {
+        const { data: allRows } = await supabase
+          .from("portfolio_items")
+          .select("id, order_index");
+        if (Array.isArray(allRows)) {
+          for (const row of allRows) {
+            const m = String(row.id).match(/^yt-(\d+)$/);
+            if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+            if (typeof row.order_index === "number") {
+              maxOrder = Math.max(maxOrder, row.order_index);
+            }
+          }
         }
+      } catch (err) {
+        console.warn("[addVideo] Supabase fetch order:", err);
       }
     }
 
@@ -731,19 +811,22 @@ export async function addVideo(videoData: {
       visible: true,
     };
 
-    const { data, error } = await supabase
-      .from("portfolio_items")
-      .insert(insertPayload)
-      .select()
-      .single();
-
-    if (error) {
-      return { ok: false, error: `ADD_FAILED: ${error.message}` };
+    if (supabase) {
+      try {
+        await supabase
+          .from("portfolio_items")
+          .insert(insertPayload);
+      } catch (err) {
+        console.warn("[addVideo] Supabase insert warning:", err);
+      }
     }
+
+    db.videos.push(insertPayload);
+    writeDb(db);
 
     revalidatePath("/");
     revalidatePath("/admin");
-    return { ok: true, data: mapRow(data) };
+    return { ok: true, data: mapRow(insertPayload) };
   } catch (e: any) {
     const safeError = formatSafeError(e);
     console.error("[ADD VIDEO ERROR]", safeError, e?.message);
@@ -789,20 +872,32 @@ export async function updateVideo(
       return { ok: false, error: "NO_CHANGES: Nothing to update" };
     }
 
-    const { data, error } = await supabase
-      .from("portfolio_items")
-      .update(patch)
-      .eq("id", id)
-      .select()
-      .single();
+    if (supabase) {
+      try {
+        await supabase
+          .from("portfolio_items")
+          .update(patch)
+          .eq("id", id);
+      } catch (err) {
+        console.warn("[updateVideo] Supabase update warning:", err);
+      }
+    }
 
-    if (error) {
-      return { ok: false, error: `UPDATE_FAILED: ${error.message}` };
+    const db = readDb();
+    if (Array.isArray(db.videos)) {
+      const idx = db.videos.findIndex((v: any) => v.id === id);
+      if (idx !== -1) {
+        db.videos[idx] = { ...db.videos[idx], ...patch };
+        writeDb(db);
+        revalidatePath("/");
+        revalidatePath("/admin");
+        return { ok: true, data: mapRow(db.videos[idx]) };
+      }
     }
 
     revalidatePath("/");
     revalidatePath("/admin");
-    return { ok: true, data: mapRow(data) };
+    return { ok: true, data: mapRow({ id, ...patch }) };
   } catch (e: any) {
     const safeError = formatSafeError(e);
     console.error("[UPDATE VIDEO ERROR]", safeError, e?.message);
@@ -825,10 +920,18 @@ export async function deleteVideo(id: string): Promise<ActionResponse> {
     }
 
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("portfolio_items").delete().eq("id", id);
+    if (supabase) {
+      try {
+        await supabase.from("portfolio_items").delete().eq("id", id);
+      } catch (err) {
+        console.warn("[deleteVideo] Supabase delete warning:", err);
+      }
+    }
 
-    if (error) {
-      return { ok: false, error: `DELETE_FAILED: ${error.message}` };
+    const db = readDb();
+    if (Array.isArray(db.videos)) {
+      db.videos = db.videos.filter((v: any) => v.id !== id);
+      writeDb(db);
     }
 
     revalidatePath("/");
@@ -880,22 +983,32 @@ export async function getCustomTransmissions(
 ): Promise<CctvItem[]> {
   try {
     const supabase = getSupabaseAdmin();
-    let q = supabase.from("cctv_items").select("*");
+    if (supabase) {
+      let q = supabase.from("cctv_items").select("*");
 
-    if (!includeHidden) {
-      q = q.eq("visible", true);
-    }
+      if (!includeHidden) {
+        q = q.eq("visible", true);
+      }
 
-    const { data, error } = await q.order("order_index", { ascending: true });
-    if (error) {
-      console.error("[getCustomTransmissions]", error.message);
-      return [];
+      const { data, error } = await q.order("order_index", { ascending: true });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map(mapCctvRow);
+      }
     }
-    return (data || []).map(mapCctvRow);
   } catch (e: any) {
-    console.error("[getCustomTransmissions]", e?.message || e);
-    return [];
+    console.warn("[getCustomTransmissions] Supabase unavailable, checking local storage:", e?.message || e);
   }
+
+  const localDb = readDb();
+  if (Array.isArray(localDb.instagramTransmissions) && localDb.instagramTransmissions.length > 0) {
+    const txs = includeHidden
+      ? localDb.instagramTransmissions
+      : localDb.instagramTransmissions.filter((item: any) => item.visible !== false);
+    return txs.map(mapCctvRow);
+  }
+
+  const defaultList = includeHidden ? DEFAULT_CCTV_POSTS : DEFAULT_CCTV_POSTS.filter((p) => p.visible !== false);
+  return defaultList.map(mapCctvRow);
 }
 
 export async function addTransmission(data: {
@@ -934,17 +1047,34 @@ export async function addTransmission(data: {
     }
 
     const supabase = getSupabaseAdmin();
-    const { data: rows } = await supabase.from("cctv_items").select("id, order_index");
+    const db = readDb();
+    if (!Array.isArray(db.instagramTransmissions)) db.instagramTransmissions = [];
 
     let nextNum = 1;
     let maxOrder = 0;
-    if (Array.isArray(rows)) {
-      for (const row of rows) {
-        const m = String(row.id).match(/^cctv-(\d+)$/);
-        if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
-        if (typeof row.order_index === "number") {
-          maxOrder = Math.max(maxOrder, row.order_index);
+
+    for (const row of db.instagramTransmissions) {
+      const m = String(row.id).match(/^cctv-(\d+)$/);
+      if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+      if (typeof row.order_index === "number") {
+        maxOrder = Math.max(maxOrder, row.order_index);
+      }
+    }
+
+    if (supabase) {
+      try {
+        const { data: rows } = await supabase.from("cctv_items").select("id, order_index");
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            const m = String(row.id).match(/^cctv-(\d+)$/);
+            if (m) nextNum = Math.max(nextNum, parseInt(m[1], 10) + 1);
+            if (typeof row.order_index === "number") {
+              maxOrder = Math.max(maxOrder, row.order_index);
+            }
+          }
         }
+      } catch (err) {
+        console.warn("[addTransmission] Supabase read order:", err);
       }
     }
 
@@ -962,17 +1092,22 @@ export async function addTransmission(data: {
       order_index: maxOrder + 1,
     };
 
-    const { data: created, error } = await supabase
-      .from("cctv_items")
-      .insert(insertPayload)
-      .select()
-      .single();
+    if (supabase) {
+      try {
+        await supabase
+          .from("cctv_items")
+          .insert(insertPayload);
+      } catch (err) {
+        console.warn("[addTransmission] Supabase insert warning:", err);
+      }
+    }
 
-    if (error) return { ok: false, error: `ADD_FAILED: ${error.message}` };
+    db.instagramTransmissions.push(insertPayload);
+    writeDb(db);
 
     revalidatePath("/");
     revalidatePath("/admin");
-    return { ok: true, data: mapCctvRow(created) };
+    return { ok: true, data: mapCctvRow(insertPayload) };
   } catch (e: any) {
     return { ok: false, error: formatSafeError(e) };
   }
@@ -1015,18 +1150,32 @@ export async function updateTransmission(
       return { ok: false, error: "NO_CHANGES" };
     }
 
-    const { data, error } = await supabase
-      .from("cctv_items")
-      .update(update)
-      .eq("id", id)
-      .select()
-      .single();
+    if (supabase) {
+      try {
+        await supabase
+          .from("cctv_items")
+          .update(update)
+          .eq("id", id);
+      } catch (err) {
+        console.warn("[updateTransmission] Supabase update warning:", err);
+      }
+    }
 
-    if (error) return { ok: false, error: `UPDATE_FAILED: ${error.message}` };
+    const db = readDb();
+    if (Array.isArray(db.instagramTransmissions)) {
+      const idx = db.instagramTransmissions.findIndex((item: any) => item.id === id);
+      if (idx !== -1) {
+        db.instagramTransmissions[idx] = { ...db.instagramTransmissions[idx], ...update };
+        writeDb(db);
+        revalidatePath("/");
+        revalidatePath("/admin");
+        return { ok: true, data: mapCctvRow(db.instagramTransmissions[idx]) };
+      }
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");
-    return { ok: true, data: mapCctvRow(data) };
+    return { ok: true, data: mapCctvRow({ id, ...update }) };
   } catch (e: any) {
     return { ok: false, error: formatSafeError(e) };
   }
@@ -1047,9 +1196,19 @@ export async function deleteTransmission(id: string): Promise<ActionResponse> {
     }
 
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("cctv_items").delete().eq("id", id);
+    if (supabase) {
+      try {
+        await supabase.from("cctv_items").delete().eq("id", id);
+      } catch (err) {
+        console.warn("[deleteTransmission] Supabase delete warning:", err);
+      }
+    }
 
-    if (error) return { ok: false, error: `DELETE_FAILED: ${error.message}` };
+    const db = readDb();
+    if (Array.isArray(db.instagramTransmissions)) {
+      db.instagramTransmissions = db.instagramTransmissions.filter((item: any) => item.id !== id);
+      writeDb(db);
+    }
 
     revalidatePath("/");
     revalidatePath("/admin");

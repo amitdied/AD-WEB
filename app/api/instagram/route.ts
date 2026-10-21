@@ -33,7 +33,7 @@ export async function GET() {
       }
     }
   } catch (error) {
-    console.error("Error reading CCTV feeds:", error);
+    console.warn("Notice reading CCTV feeds, using defaults:", error);
   }
 
   // Fallback when Supabase has no usable CCTV records or error occurs

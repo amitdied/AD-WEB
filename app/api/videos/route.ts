@@ -14,7 +14,7 @@ export async function GET() {
       });
     }
   } catch (error) {
-    console.error('Error fetching public portfolio videos:', error);
+    console.warn('Error fetching public portfolio videos:', error);
   }
 
   return NextResponse.json([], {

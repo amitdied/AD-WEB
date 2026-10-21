@@ -130,7 +130,7 @@ export function WorldMode({
           {/* Embedded attached HTML file as the entire AMITDIED WORLD */}
           <iframe
             ref={iframeRef}
-            src="/assets/aistudio/little-hollow_5951b15b.html"
+            src="/assets/aistudio/amitdied-world-free-roam_233ea8dd.html"
             title="AMITDIED WORLD"
             className="w-full h-full border-0 block"
             allow="autoplay; fullscreen"
